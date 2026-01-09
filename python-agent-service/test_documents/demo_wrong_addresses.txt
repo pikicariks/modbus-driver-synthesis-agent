@@ -1,0 +1,31 @@
+SOLAR INVERTER MODBUS PROTOCOL v1.2
+===================================
+Model: DemoSolar INV-3000
+Protocol: Modbus TCP
+
+REGISTER MAP
+------------
+
+Register Address | Name              | Type    | Unit  | Description
+-----------------|-------------------|---------|-------|-------------
+0x0001           | Power_Output      | uint16  | W     | Current power output
+0x0002           | AC_Voltage        | uint16  | V     | AC voltage (x0.1)
+0x0003           | AC_Current        | uint16  | A     | AC current (x0.01)
+0x0004           | Temperature       | int16   | °C    | Internal temperature
+0x0005           | Status_Code       | uint16  | -     | Operating status
+0x0006           | Error_Code        | uint16  | -     | Active error code
+
+COMMUNICATION PARAMETERS
+------------------------
+- Slave ID: 1
+- Function Code: 3 (Read Holding Registers)
+- Byte Order: Big-endian
+
+STATUS CODES
+------------
+0 = Standby
+1 = Running
+2 = Fault
+3 = Maintenance
+
+NOTE: All registers are 16-bit values. Use function code 3.

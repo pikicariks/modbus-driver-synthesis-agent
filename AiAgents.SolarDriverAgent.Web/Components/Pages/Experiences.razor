@@ -1,0 +1,325 @@
+@page "/experiences"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ILogger<Experiences> Logger
+
+<PageTitle>Experience Store - Solar Driver Agent</PageTitle>
+
+<div class="experiences-page">
+    <header class="page-header">
+        <h1>🗄️ Experience Store (ChromaDB)</h1>
+        <button class="btn btn-secondary" @onclick="LoadExperiences">
+            🔄 Refresh
+        </button>
+    </header>
+
+    @if (isLoading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+            <span>Učitavam iskustva iz ChromaDB...</span>
+        </div>
+    }
+    else if (error != null)
+    {
+        <div class="error-banner">
+            <span>❌ Greška: @error</span>
+        </div>
+    }
+    else
+    {
+        <!-- Summary Stats -->
+        <div class="experience-summary">
+            <div class="summary-item total">
+                <span class="summary-value">@totalCount</span>
+                <span class="summary-label">Total</span>
+            </div>
+            <div class="summary-item success">
+                <span class="summary-value">@successCount</span>
+                <span class="summary-label">Uspješnih</span>
+            </div>
+            <div class="summary-item failed">
+                <span class="summary-value">@failedCount</span>
+                <span class="summary-label">Neuspješnih</span>
+            </div>
+        </div>
+
+        <!-- Experiences List -->
+        @if (experiences.Any())
+        {
+            <div class="experiences-grid">
+                @foreach (var exp in experiences)
+                {
+                    <div class="experience-card @(exp.Success ? "success" : "failed")">
+                        <div class="experience-header">
+                            <span class="experience-id">@exp.Id[..20]...</span>
+                            <span class="experience-status">@(exp.Success ? "✅" : "❌")</span>
+                        </div>
+                        
+                        <div class="experience-device">
+                            <span class="label">Device:</span>
+                            <span class="value">@exp.DeviceType</span>
+                        </div>
+                        
+                        <div class="experience-time">
+                            <span class="label">Kreirano:</span>
+                            <span class="value">@FormatDateTime(exp.CreatedAt)</span>
+                        </div>
+                        
+                        @if (!exp.Success && !string.IsNullOrEmpty(exp.ErrorMessage))
+                        {
+                            <div class="experience-error">
+                                <span class="label">Greška:</span>
+                                <span class="value">@TruncateText(exp.ErrorMessage, 100)</span>
+                            </div>
+                        }
+                        
+                        @if (!string.IsNullOrEmpty(exp.SolutionApplied))
+                        {
+                            <div class="experience-solution">
+                                <span class="label">Rješenje:</span>
+                                <span class="value">@TruncateText(exp.SolutionApplied, 80)</span>
+                            </div>
+                        }
+                        
+                        @if (!string.IsNullOrEmpty(exp.ProblematicBytes))
+                        {
+                            <div class="experience-bytes">
+                                <span class="label">Problematični bajtovi:</span>
+                                <code>@exp.ProblematicBytes</code>
+                            </div>
+                        }
+                        
+                        <div class="experience-signature">
+                            <span class="label">Signature:</span>
+                            <code>@exp.ProtocolSignature</code>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-icon">📭</div>
+                <h3>Nema iskustava</h3>
+                <p>Procesirajte PDF dokumente da bi se generirala iskustva.</p>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .experiences-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .experience-summary {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    
+    .summary-item {
+        padding: 1rem 1.5rem;
+        background: var(--bg-card);
+        border-radius: var(--border-radius);
+        text-align: center;
+        border-left: 4px solid var(--accent-primary);
+    }
+    
+    .summary-item.success { border-left-color: var(--accent-success); }
+    .summary-item.failed { border-left-color: var(--accent-error); }
+    .summary-item.total { border-left-color: var(--accent-purple); }
+    
+    .summary-value {
+        display: block;
+        font-size: 2rem;
+        font-weight: 700;
+        font-family: var(--font-mono);
+    }
+    
+    .summary-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+    
+    .experiences-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 1rem;
+    }
+    
+    .experience-card {
+        background: var(--bg-card);
+        border-radius: var(--border-radius);
+        padding: 1.25rem;
+        border: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .experience-card.success { border-left: 4px solid var(--accent-success); }
+    .experience-card.failed { border-left: 4px solid var(--accent-error); }
+    
+    .experience-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .experience-id {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    .experience-status {
+        font-size: 1.25rem;
+    }
+    
+    .experience-device .value,
+    .experience-time .value {
+        font-weight: 600;
+    }
+    
+    .experience-error {
+        padding: 0.5rem;
+        background: rgba(239, 68, 68, 0.1);
+        border-radius: 6px;
+    }
+    
+    .experience-error .value {
+        color: var(--accent-error);
+        font-size: 0.8rem;
+    }
+    
+    .experience-solution {
+        padding: 0.5rem;
+        background: rgba(16, 185, 129, 0.1);
+        border-radius: 6px;
+    }
+    
+    .experience-solution .value {
+        color: var(--accent-success);
+        font-size: 0.8rem;
+    }
+    
+    .experience-bytes code,
+    .experience-signature code {
+        background: var(--bg-secondary);
+        padding: 0.125rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+    }
+    
+    .experience-card .label {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        margin-right: 0.25rem;
+    }
+    
+    .error-banner {
+        padding: 1rem;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid var(--accent-error);
+        border-radius: var(--border-radius);
+        color: var(--accent-error);
+    }
+</style>
+
+@code {
+    private List<ExperienceDto> experiences = new();
+    private bool isLoading = true;
+    private string? error;
+    private int totalCount;
+    private int successCount;
+    private int failedCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExperiences();
+    }
+
+    private async Task LoadExperiences()
+    {
+        isLoading = true;
+        error = null;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.GetFromJsonAsync<ExperiencesResponse>(
+                "http://localhost:8000/api/v1/experiences?limit=50");
+            
+            if (response != null)
+            {
+                totalCount = response.Total;
+                successCount = response.Summary?.Successful ?? 0;
+                failedCount = response.Summary?.Failed ?? 0;
+                experiences = response.Experiences ?? new();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load experiences");
+            error = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatDateTime(string? isoDateTime)
+    {
+        if (string.IsNullOrEmpty(isoDateTime)) return "N/A";
+        
+        if (DateTime.TryParse(isoDateTime, out var dt))
+        {
+            return dt.ToString("dd.MM.yyyy HH:mm:ss");
+        }
+        return isoDateTime;
+    }
+
+    private static string TruncateText(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length > maxLength ? text[..maxLength] + "..." : text;
+    }
+
+    // DTOs
+    private record ExperiencesResponse
+    {
+        public int Total { get; init; }
+        public int Returned { get; init; }
+        public SummaryDto? Summary { get; init; }
+        public List<ExperienceDto>? Experiences { get; init; }
+    }
+
+    private record SummaryDto
+    {
+        public int Successful { get; init; }
+        public int Failed { get; init; }
+    }
+
+    private record ExperienceDto
+    {
+        public string Id { get; init; } = "";
+        public string DeviceType { get; init; } = "";
+        public string ProblemType { get; init; } = "";
+        public bool Success { get; init; }
+        public string? ErrorMessage { get; init; }
+        public string? SolutionApplied { get; init; }
+        public string? ProblematicBytes { get; init; }
+        public int BytePosition { get; init; }
+        public string? ProtocolSignature { get; init; }
+        public string? CreatedAt { get; init; }
+    }
+}

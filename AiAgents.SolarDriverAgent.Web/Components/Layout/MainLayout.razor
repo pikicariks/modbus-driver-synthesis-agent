@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <span class="logo-text">Solar Driver Agent</span>
+            </div>
+            <nav class="nav">
+                <a href="/" class="nav-link">Dashboard</a>
+                <a href="/tasks" class="nav-link">Tasks</a>
+                <a href="/experiences" class="nav-link">Experiences</a>
+                <a href="/swagger" class="nav-link" target="_blank">API</a>
+            </nav>
+        </div>
+    </header>
+    
+    <main class="main-content">
+        @Body
+    </main>
+    
+    <footer class="footer">
+        <span>Multi-Agent System for Modbus Driver Synthesis</span>
+    </footer>
+</div>

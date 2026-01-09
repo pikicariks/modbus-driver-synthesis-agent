@@ -1,0 +1,710 @@
+@page "/tasks"
+@rendermode InteractiveServer
+@using AiAgents.SolarDriverAgent.Domain.Enums
+@using AiAgents.SolarDriverAgent.Domain.Repositories
+@using AiAgents.SolarDriverAgent.Domain.Entities
+@using Microsoft.AspNetCore.SignalR.Client
+@using AiAgents.SolarDriverAgent.Web.Hubs
+@implements IAsyncDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject ILogger<Tasks> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>Tasks - Solar Driver Agent</PageTitle>
+
+<div class="tasks-page">
+    <header class="page-header">
+        <h1>📋 Protocol Tasks</h1>
+        <div class="connection-status">
+            @if (hubConnection?.State == HubConnectionState.Connected)
+            {
+                <span class="connected">🟢 Live</span>
+            }
+            else
+            {
+                <span class="disconnected">🔴 Offline</span>
+            }
+        </div>
+    </header>
+
+    <!-- Upload PDF Section -->
+    <div class="upload-section">
+        <div class="upload-card">
+            <h3>📤 Upload PDF Document</h3>
+            <div class="upload-form">
+                <div class="form-group">
+                    <label for="deviceName">Device Name:</label>
+                    <input type="text" id="deviceName" @bind="uploadDeviceName" 
+                           placeholder="e.g. Fronius Symo 10.0" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label for="pdfFile">PDF File:</label>
+                    <InputFile id="pdfFile" OnChange="HandleFileSelected" accept=".pdf" class="form-input-file" />
+                    @if (selectedFile != null)
+                    {
+                        <span class="file-info">📄 @selectedFile.Name (@(selectedFile.Size / 1024) KB)</span>
+                    }
+                </div>
+                <div class="upload-actions">
+                    <button class="upload-btn" @onclick="UploadPdf" disabled="@(isUploading || selectedFile == null)">
+                        @if (isUploading)
+                        {
+                            <span>⏳ Uploading...</span>
+                        }
+                        else
+                        {
+                            <span>🚀 Start Processing</span>
+                        }
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(uploadMessage))
+                {
+                    <div class="upload-message @(uploadSuccess ? "success" : "error")">
+                        @uploadMessage
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-time Processing Log -->
+    @if (processingLogs.Any())
+    {
+        <div class="realtime-log-panel">
+            <div class="log-panel-header">
+                <span>🔄 Real-time Processing</span>
+                <button class="clear-btn" @onclick="ClearProcessingLogs">Clear</button>
+            </div>
+            <div class="log-panel-content">
+                @foreach (var log in processingLogs.TakeLast(20).Reverse())
+                {
+                    <div class="realtime-log-entry @GetLogStatusClass(log.Status) @(log.Phase == "EXPERIENCE_STORE" ? "experience" : "") @(log.Phase == "ADDRESS_ERROR" ? "address-error" : "")">
+                        <span class="log-time">@log.Timestamp.ToString("HH:mm:ss")</span>
+                        <span class="log-phase">@GetPhaseIcon(log.Phase) @log.Phase</span>
+                        <span class="log-device">@log.DeviceName</span>
+                        <span class="log-message">@log.Message</span>
+                        @if (log.DurationMs.HasValue)
+                        {
+                            <span class="log-duration">@log.DurationMs ms</span>
+                        }
+                        @if (!string.IsNullOrEmpty(log.Details))
+                        {
+                            <div class="log-details-text">@log.Details</div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Statistics -->
+    <div class="stats-row">
+        <div class="stat-item">
+            <span class="stat-value">@totalCount</span>
+            <span class="stat-label">Total</span>
+        </div>
+        <div class="stat-item queued">
+            <span class="stat-value">@queuedCount</span>
+            <span class="stat-label">Queued</span>
+        </div>
+        <div class="stat-item processing">
+            <span class="stat-value">@processingCount</span>
+            <span class="stat-label">Processing</span>
+        </div>
+        <div class="stat-item success">
+            <span class="stat-value">@successCount</span>
+            <span class="stat-label">Success</span>
+        </div>
+        <div class="stat-item failed">
+            <span class="stat-value">@failedCount</span>
+            <span class="stat-label">Failed</span>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <div class="filter-group">
+            <label>Status Filter:</label>
+            <select @bind="selectedStatus" @bind:after="OnFilterChanged">
+                <option value="">All</option>
+                <option value="Queued">Queued</option>
+                <option value="Processing">Processing</option>
+                <option value="Success">Success</option>
+                <option value="Failed">Failed</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Task List -->
+    @if (isLoading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+            <span>Učitavam taskove...</span>
+        </div>
+    }
+    else if (!tasks.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <h3>Nema taskova</h3>
+            <p>Upload PDF dokumentaciju putem API-ja da kreirate novi task.</p>
+            <a href="/swagger" class="btn btn-primary" target="_blank">Otvori API →</a>
+        </div>
+    }
+    else
+    {
+        <div class="tasks-grid">
+            @foreach (var task in tasks)
+            {
+                <div class="task-card @task.Status.ToString().ToLower()">
+                    <div class="task-header">
+                        <div class="task-name">@task.DeviceName</div>
+                        <span class="status-badge @task.Status.ToString().ToLower()">
+                            @task.Status
+                        </span>
+                    </div>
+                    
+                    <div class="task-id">
+                        <span class="label">ID:</span>
+                        <code>@task.Id.ToString()[..8]...</code>
+                    </div>
+
+                    <div class="task-meta">
+                        <div class="meta-item">
+                            <span class="label">Kreirano:</span>
+                            <span>@task.CreatedAt.ToString("dd.MM.yyyy HH:mm")</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="label">Pokušaji:</span>
+                            <span>@task.AttemptCount / @task.MaxAttempts</span>
+                        </div>
+                        @if (task.PdfDocument != null)
+                        {
+                            <div class="meta-item">
+                                <span class="label">PDF:</span>
+                                <span>@FormatFileSize(task.PdfDocument.Length)</span>
+                            </div>
+                        }
+                    </div>
+
+                    @if (task.Status == ProtocolTaskStatus.Success || task.Status == ProtocolTaskStatus.Failed)
+                    {
+                        <div class="task-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill @task.Status.ToString().ToLower()" 
+                                     style="width: 100%"></div>
+                            </div>
+                        </div>
+                    }
+                    else if (task.Status == ProtocolTaskStatus.Processing)
+                    {
+                        <div class="task-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill processing animate" 
+                                     style="width: @((task.AttemptCount * 100.0 / task.MaxAttempts).ToString("F0"))%"></div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(task.ExtractedSpecification))
+                    {
+                        <div class="task-spec">
+                            <span class="label">Specifikacija:</span>
+                            <div class="spec-preview">
+                                @(task.ExtractedSpecification.Length > 200 
+                                    ? task.ExtractedSpecification[..200] + "..." 
+                                    : task.ExtractedSpecification)
+                            </div>
+                        </div>
+                    }
+
+                @if (task.CurrentDriver != null)
+                {
+                    <div class="task-driver">
+                        <span class="label">✓ Drajver generisan</span>
+                        <span class="driver-lang">v@task.CurrentDriver.Version</span>
+                    </div>
+                }
+                
+                <!-- Iteration Logs / Pokušaji -->
+                @if (task.SimulationLogs != null && task.SimulationLogs.Any())
+                {
+                    <div class="iteration-logs">
+                        <div class="logs-header" @onclick="() => ToggleLogsExpanded(task.Id)">
+                            <span class="logs-title">📊 Iteracije (@task.SimulationLogs.Count)</span>
+                            <span class="expand-icon">@(IsLogsExpanded(task.Id) ? "▼" : "▶")</span>
+                        </div>
+                        
+                        @if (IsLogsExpanded(task.Id))
+                        {
+                            <div class="logs-list">
+                                @foreach (var log in task.SimulationLogs.OrderByDescending(l => l.ExecutedAt))
+                                {
+                                    <div class="log-item @(log.IsSuccess ? "success" : "failed")">
+                                        <div class="log-attempt">
+                                            <span class="attempt-number">.NET Tick #@log.AttemptNumber</span>
+                                            <span class="attempt-status">@(log.IsSuccess ? "✅" : "❌")</span>
+                                        </div>
+                                        <div class="log-details">
+                                            <span class="log-time">@log.ExecutedAt.ToString("HH:mm:ss")</span>
+                                            @if (log.InternalAttemptCount > 0)
+                                            {
+                                                <span class="internal-attempts-badge">🔄 @log.InternalAttemptCount internih pokušaja</span>
+                                            }
+                                            @if (log.ConfidenceScore > 0)
+                                            {
+                                                <span class="confidence-badge">📊 @log.ConfidenceScore.ToString("P0")</span>
+                                            }
+                                        </div>
+                                        
+                                        <!-- Prikaz internih pokušaja Python agenata -->
+                                        @{ var internalAttempts = ParseInternalAttempts(log.InternalAttemptsJson); }
+                                        @if (internalAttempts.Any())
+                                        {
+                                            <div class="internal-attempts-list">
+                                                @foreach (var attempt in internalAttempts)
+                                                {
+                                                    <div class="internal-attempt @(attempt.success ? "success" : "failed")">
+                                                        <span class="agent-icon">@GetAgentIcon(attempt.agentName)</span>
+                                                        <span class="agent-name">@(attempt.agentName ?? "Agent")</span>
+                                                        <span class="agent-action">@(attempt.action ?? "processing")</span>
+                                                        <span class="agent-status">@(attempt.success ? "✓" : "✗")</span>
+                                                        <span class="agent-duration">@attempt.durationMs ms</span>
+                                                        @if (!string.IsNullOrEmpty(attempt.errorMessage))
+                                                        {
+                                                            <div class="agent-error">@TruncateError(attempt.errorMessage)</div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        
+                                        @if (!string.IsNullOrEmpty(log.ErrorMessage))
+                                        {
+                                            <div class="log-error">
+                                                <span class="error-label">Finalna greška:</span>
+                                                <span class="error-text">@TruncateError(log.ErrorMessage)</span>
+                                            </div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(log.TestedRegisters))
+                                        {
+                                            <div class="log-registers">
+                                                <span class="registers-label">Testirani registri:</span>
+                                                <span class="registers-text">@log.TestedRegisters</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else if (task.Status == ProtocolTaskStatus.Processing)
+                {
+                    <div class="iteration-logs processing">
+                        <div class="processing-indicator">
+                            <span class="spinner-small"></span>
+                            <span>Agent obrađuje... (Pokušaj @(task.AttemptCount))</span>
+                        </div>
+                    </div>
+                }
+                </div>
+            }
+        </div>
+
+        <!-- Pagination -->
+        @if (totalPages > 1)
+        {
+            <div class="pagination">
+                <button class="btn btn-secondary" 
+                        disabled="@(currentPage <= 1)"
+                        @onclick="() => GoToPage(currentPage - 1)">
+                    ← Prethodna
+                </button>
+                <span class="page-info">
+                    Stranica @currentPage od @totalPages
+                </span>
+                <button class="btn btn-secondary" 
+                        disabled="@(currentPage >= totalPages)"
+                        @onclick="() => GoToPage(currentPage + 1)">
+                    Sljedeća →
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@using System.Text.Json
+
+@code {
+    private List<ProtocolTask> tasks = new();
+    private bool isLoading = true;
+    private string selectedStatus = "";
+    private System.Threading.Timer? _refreshTimer;
+    private HashSet<Guid> expandedLogs = new();
+    
+    // SignalR
+    private HubConnection? hubConnection;
+    private List<ProcessingLogEntry> processingLogs = new();
+    
+    // Upload
+    private IBrowserFile? selectedFile;
+    private string uploadDeviceName = "";
+    private bool isUploading = false;
+    private string uploadMessage = "";
+    private bool uploadSuccess = false;
+    
+    // Model za prikaz internih pokušaja
+    private record InternalAttemptDisplay
+    {
+        public int attemptNumber { get; init; }
+        public string? agentName { get; init; }
+        public string? action { get; init; }
+        public bool success { get; init; }
+        public string? errorMessage { get; init; }
+        public int durationMs { get; init; }
+        public string? timestamp { get; init; }
+    }
+    
+    // ProcessingLogEntry is imported from AiAgents.SolarDriverAgent.Web.Hubs
+    
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount;
+    private int totalPages => (int)Math.Ceiling(totalCount / (double)pageSize);
+    
+    // Stats
+    private int queuedCount;
+    private int processingCount;
+    private int successCount;
+    private int failedCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatistics();
+        await LoadTasks();
+        
+        // Pokreni SignalR konekciju
+        await StartSignalRConnection();
+        
+        // Pokreni auto-refresh timer (svake 2 sekunde)
+        _refreshTimer = new System.Threading.Timer(
+            async _ =>
+            {
+                try
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await RefreshData();
+                        StateHasChanged();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Auto-refresh failed");
+                }
+            },
+            null,
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(2)
+        );
+    }
+    
+    private async Task StartSignalRConnection()
+    {
+        try
+        {
+            hubConnection = new HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/agent"))
+                .WithAutomaticReconnect()
+                .Build();
+            
+            // Slušaj real-time processing logove
+            hubConnection.On<ProcessingLogEntry>("ProcessingLog", async (entry) =>
+            {
+                Logger.LogInformation(
+                    "Received ProcessingLog: {Phase} - {Status} - {Message}",
+                    entry.Phase, entry.Status, entry.Message);
+                
+                processingLogs.Add(entry);
+                
+                // Limtiraj na 50 logova
+                if (processingLogs.Count > 50)
+                    processingLogs.RemoveAt(0);
+                
+                await InvokeAsync(StateHasChanged);
+            });
+            
+            // Slušaj tick completed za osvježavanje liste
+            hubConnection.On<object>("TickCompleted", async (_) =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshData();
+                    StateHasChanged();
+                });
+            });
+            
+            await hubConnection.StartAsync();
+            Logger.LogInformation("SignalR connected to /hubs/agent");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to connect to SignalR hub");
+        }
+    }
+
+    private async Task LoadStatistics()
+    {
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<IProtocolTaskRepository>();
+
+            queuedCount = await repo.GetTotalCountAsync(ProtocolTaskStatus.Queued, default);
+            processingCount = await repo.GetTotalCountAsync(ProtocolTaskStatus.Processing, default);
+            successCount = await repo.GetTotalCountAsync(ProtocolTaskStatus.Success, default);
+            failedCount = await repo.GetTotalCountAsync(ProtocolTaskStatus.Failed, default);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load statistics");
+        }
+    }
+
+    private async Task LoadTasks(bool showLoading = true)
+    {
+        if (showLoading)
+        {
+            isLoading = true;
+            StateHasChanged();
+        }
+
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var repo = scope.ServiceProvider.GetRequiredService<IProtocolTaskRepository>();
+
+            ProtocolTaskStatus? statusFilter = string.IsNullOrEmpty(selectedStatus) 
+                ? null 
+                : Enum.Parse<ProtocolTaskStatus>(selectedStatus);
+
+            var result = await repo.GetAllAsync(currentPage, pageSize, statusFilter, default);
+            tasks = result.Items.ToList();
+            totalCount = result.TotalCount;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load tasks");
+            // Don't reset tasks on error during refresh
+            if (showLoading)
+                tasks = new();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadStatistics();
+        await LoadTasks(showLoading: false);
+    }
+
+    private async Task OnFilterChanged()
+    {
+        currentPage = 1;
+        await LoadTasks();
+    }
+
+    private async Task GoToPage(int page)
+    {
+        currentPage = page;
+        await LoadTasks();
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+    
+    private void ToggleLogsExpanded(Guid taskId)
+    {
+        if (expandedLogs.Contains(taskId))
+            expandedLogs.Remove(taskId);
+        else
+            expandedLogs.Add(taskId);
+        
+        StateHasChanged();
+    }
+    
+    private bool IsLogsExpanded(Guid taskId) => expandedLogs.Contains(taskId);
+    
+    private static string TruncateError(string error)
+    {
+        if (string.IsNullOrEmpty(error)) return "";
+        return error.Length > 150 ? error[..150] + "..." : error;
+    }
+    
+    private List<InternalAttemptDisplay> ParseInternalAttempts(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return new();
+        
+        try
+        {
+            return JsonSerializer.Deserialize<List<InternalAttemptDisplay>>(json) ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+    
+    private static string GetAgentIcon(string? agentName)
+    {
+        return agentName?.ToLower() switch
+        {
+            "parser" or "analyst" => "📋",
+            "coder" or "builder" => "💻",
+            "tester" or "validator" => "🧪",
+            _ => "🤖"
+        };
+    }
+    
+    private static string GetPhaseIcon(string phase)
+    {
+        return phase.ToUpper() switch
+        {
+            "SENSE" => "👁️",
+            "THINK" => "🧠",
+            "ACT" => "⚡",
+            "LEARN" => "📚",
+            "PYTHON_PARSER" => "📋",
+            "PYTHON_CODER" => "💻",
+            "PYTHON_TESTER" => "🧪",
+            "EXPERIENCE_STORE" => "🗄️",
+            "ADDRESS_ERROR" => "🚫",
+            _ => "🔹"
+        };
+    }
+    
+    private static string GetLogStatusClass(string status)
+    {
+        return status.ToLower() switch
+        {
+            "completed" => "completed",
+            "failed" => "failed",
+            "inprogress" => "in-progress",
+            "started" => "started",
+            _ => ""
+        };
+    }
+    
+    private void ClearProcessingLogs()
+    {
+        processingLogs.Clear();
+        StateHasChanged();
+    }
+    
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        uploadMessage = "";
+        
+        // Ako nema device name, koristi ime fajla bez ekstenzije
+        if (string.IsNullOrEmpty(uploadDeviceName) && selectedFile != null)
+        {
+            uploadDeviceName = Path.GetFileNameWithoutExtension(selectedFile.Name);
+        }
+        
+        StateHasChanged();
+    }
+    
+    private async Task UploadPdf()
+    {
+        if (selectedFile == null)
+        {
+            uploadMessage = "Please select a PDF file first.";
+            uploadSuccess = false;
+            return;
+        }
+        
+        isUploading = true;
+        uploadMessage = "";
+        StateHasChanged();
+        
+        try
+        {
+            using var scope = ScopeFactory.CreateScope();
+            var httpClient = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
+            httpClient.BaseAddress = new Uri(Navigation.BaseUri);
+            
+            // Prepare multipart form data
+            using var content = new MultipartFormDataContent();
+            
+            // Add PDF file
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50 MB max
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            
+            var fileContent = new ByteArrayContent(memoryStream.ToArray());
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+            content.Add(fileContent, "pdfFile", selectedFile.Name);  // Correct field name
+            
+            // Add device name
+            var deviceName = string.IsNullOrWhiteSpace(uploadDeviceName) 
+                ? Path.GetFileNameWithoutExtension(selectedFile.Name) 
+                : uploadDeviceName;
+            content.Add(new StringContent(deviceName), "deviceName");
+            
+            // Send request to correct endpoint
+            var response = await httpClient.PostAsync("/api/tasks/upload", content);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                uploadMessage = $"✅ Task created successfully for '{deviceName}'! Processing will start shortly.";
+                uploadSuccess = true;
+                
+                // Reset form
+                selectedFile = null;
+                uploadDeviceName = "";
+                
+                // Refresh tasks list
+                await RefreshData();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                uploadMessage = $"❌ Upload failed: {error}";
+                uploadSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            uploadMessage = $"❌ Error: {ex.Message}";
+            uploadSuccess = false;
+            Logger.LogError(ex, "Failed to upload PDF");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+    
+    public async ValueTask DisposeAsync()
+    {
+        _refreshTimer?.Dispose();
+        
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

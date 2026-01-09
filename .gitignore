@@ -1,0 +1,255 @@
+# ============================================
+# .NET / C#
+# ============================================
+
+## Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.cache
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+*.svclog
+*.scc
+
+## Rider
+.idea/
+*.sln.iml
+
+## NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## ASP.NET
+ScaffoldingReadMe.txt
+
+## Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+## Application specific
+*.db
+*.db-shm
+*.db-wal
+SolarDriverAgent.db
+
+# ============================================
+# Python
+# ============================================
+
+## Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+## Virtual environments
+python-agent-service/venv/
+python-agent-service/.venv/
+venv/
+.venv/
+ENV/
+env/
+
+## Environment variables
+python-agent-service/.env
+.env
+.env.local
+.env.*.local
+
+## ChromaDB persistence (regenerated)
+python-agent-service/chroma_db/
+
+## Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+## PyInstaller
+*.manifest
+*.spec
+
+## Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+## Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+
+## Jupyter Notebook
+.ipynb_checkpoints
+
+## pyenv
+.python-version
+
+## mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+## Pyre type checker
+.pyre/
+
+## pytype static type analyzer
+.pytype/
+
+## Cython debug symbols
+cython_debug/
+
+# ============================================
+# IDEs and Editors
+# ============================================
+
+## VS Code
+.vscode/
+*.code-workspace
+
+## JetBrains IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+## Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+## Vim
+*.swp
+*.swo
+*~
+
+## Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================
+# OS Generated
+# ============================================
+
+## macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+## Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+## Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ============================================
+# Logs and Databases
+# ============================================
+*.log
+*.sql
+*.sqlite
+*.sqlite3
+logs/
+*.log.*
+
+# ============================================
+# Secrets and Credentials
+# ============================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets.json
+appsettings.*.json
+!appsettings.json
+!appsettings.Development.json
+
+# ============================================
+# Misc
+# ============================================
+*.bak
+*.tmp
+*.temp
+*.orig
+.scratch/
+scratch/
+temp/
+tmp/
+
+# Test documents (keep structure, ignore large files)
+# python-agent-service/test_documents/*.pdf
+
+# Generated documentation
+docs/_build/
+site/

@@ -1,0 +1,501 @@
+@page "/"
+@page "/dashboard"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Net.Http.Json
+@implements IAsyncDisposable
+@inject NavigationManager Navigation
+@inject ILogger<Dashboard> Logger
+@inject HttpClient Http
+
+<PageTitle>Dashboard - Solar Driver Agent</PageTitle>
+
+<div class="dashboard">
+    <!-- Agent Status Banner -->
+    <div class="status-banner @GetStatusClass()">
+        <div class="status-indicator"></div>
+        <div class="status-info">
+            <span class="status-label">Agent Status:</span>
+            <span class="status-value">@agentStatus</span>
+            @if (pythonHealthy)
+            {
+                <span class="health-badge healthy">Python ✓</span>
+            }
+            else
+            {
+                <span class="health-badge unhealthy">Python ✗</span>
+            }
+        </div>
+        <div class="connection-status">
+            <span class="@(isConnected ? "connected" : "disconnected")">
+                @(isConnected ? "● Live" : "○ Disconnected")
+            </span>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">@totalTicks</div>
+            <div class="stat-label">Total Ticks</div>
+        </div>
+        <div class="stat-card success">
+            <div class="stat-value">@successfulTicks</div>
+            <div class="stat-label">Successful</div>
+        </div>
+        <div class="stat-card failed">
+            <div class="stat-value">@failedTicks</div>
+            <div class="stat-label">Failed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@pendingTasks</div>
+            <div class="stat-label">Pending Tasks</div>
+        </div>
+    </div>
+
+    <!-- Latest Tick Result -->
+    @if (latestTick != null)
+    {
+        <div class="latest-tick @(latestTick.Success ? "success" : "failed")">
+            <h2>
+                @if (latestTick.Success)
+                {
+                    <span class="icon">✅</span>
+                }
+                else
+                {
+                    <span class="icon">❌</span>
+                }
+                Latest Tick Result
+            </h2>
+            
+            <div class="tick-header">
+                <div class="device-name">@latestTick.DeviceName</div>
+                <div class="tick-meta">
+                    <span class="status-badge @latestTick.Status.ToLower()">@latestTick.Status</span>
+                    <span class="duration">@latestTick.DurationMs ms</span>
+                    <span class="timestamp">@latestTick.Timestamp.ToString("HH:mm:ss")</span>
+                </div>
+            </div>
+
+            <div class="tick-details">
+                <!-- Key Metrics -->
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <div class="metric-icon">🔄</div>
+                        <div class="metric-content">
+                            <div class="metric-value">@latestTick.InternalAttempts</div>
+                            <div class="metric-label">Agent je pokušao @latestTick.InternalAttempts put(a) interno.</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric">
+                        <div class="metric-icon">📊</div>
+                        <div class="metric-content">
+                            <div class="metric-value">@latestTick.RegisterCount</div>
+                            <div class="metric-label">Identifikovano @latestTick.RegisterCount registara.</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric">
+                        <div class="metric-icon">🎯</div>
+                        <div class="metric-content">
+                            <div class="metric-value">@((latestTick.ConfidenceScore * 100).ToString("F0"))%</div>
+                            <div class="metric-label">Confidence score: @((latestTick.ConfidenceScore * 100).ToString("F0"))%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric">
+                        <div class="metric-icon">🧠</div>
+                        <div class="metric-content">
+                            <div class="metric-value">@(latestTick.ExperienceId ?? "N/A")</div>
+                            <div class="metric-label">
+                                @if (!string.IsNullOrEmpty(latestTick.ExperienceId))
+                                {
+                                    <span>Učeno iz ExperienceID: @latestTick.ExperienceId</span>
+                                }
+                                else
+                                {
+                                    <span>Novo iskustvo (nije iz RAG-a)</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attempt Progress -->
+                <div class="attempt-progress">
+                    <div class="progress-label">
+                        Pokušaj @latestTick.TotalAttempts / @latestTick.MaxAttempts
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: @((latestTick.TotalAttempts * 100.0 / latestTick.MaxAttempts).ToString("F0"))%"></div>
+                    </div>
+                </div>
+
+                <!-- Tested Registers -->
+                @if (latestTick.TestedRegisters.Any())
+                {
+                    <div class="registers-section">
+                        <h4>Testirani Registri:</h4>
+                        <div class="registers-list">
+                            @foreach (var reg in latestTick.TestedRegisters.Take(10))
+                            {
+                                <span class="register-badge">@reg</span>
+                            }
+                            @if (latestTick.TestedRegisters.Count > 10)
+                            {
+                                <span class="register-more">+@(latestTick.TestedRegisters.Count - 10) više</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- Error Details -->
+                @if (!string.IsNullOrEmpty(latestTick.ErrorMessage))
+                {
+                    <div class="error-section">
+                        <h4>⚠️ Greška:</h4>
+                        <div class="error-message">@latestTick.ErrorMessage</div>
+                        @if (!string.IsNullOrEmpty(latestTick.ProblematicBytes))
+                        {
+                            <div class="byte-error">
+                                <span>Problematični bajtovi: <code>@latestTick.ProblematicBytes</code></span>
+                                @if (latestTick.BytePosition.HasValue)
+                                {
+                                    <span> na poziciji @latestTick.BytePosition</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Agent Logs -->
+                @if (latestTick.AgentLogs.Any())
+                {
+                    <div class="agent-logs">
+                        <h4>🤖 Interni Agenti:</h4>
+                        <div class="logs-timeline">
+                            @foreach (var log in latestTick.AgentLogs)
+                            {
+                                <div class="log-entry @(log.Success ? "success" : "failed")">
+                                    <div class="log-icon">
+                                        @GetAgentIcon(log.AgentName)
+                                    </div>
+                                    <div class="log-content">
+                                        <div class="log-header">
+                                            <span class="agent-name">@log.AgentName</span>
+                                            <span class="log-status">@(log.Success ? "✓" : "✗")</span>
+                                        </div>
+                                        <div class="log-action">@log.Action</div>
+                                        <div class="log-meta">
+                                            <span>Pokušaj #@log.AttemptNumber</span>
+                                            <span>@log.DurationMs ms</span>
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(log.ErrorMessage))
+                                        {
+                                            <div class="log-error">@log.ErrorMessage</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (lastDriver != null)
+    {
+        <!-- Prikaz zadnjeg uspješno generisanog drivera -->
+        <div class="last-driver-section success">
+            <h2>✅ Zadnji Uspješno Generisani Driver</h2>
+            
+            <div class="driver-header">
+                <div class="device-name">
+                    <span class="label">Device:</span>
+                    <span class="value">@lastDriver.DeviceName</span>
+                </div>
+                <div class="driver-meta">
+                    <span class="version-badge">v@lastDriver.Version</span>
+                    @if (lastDriver.IsValidated)
+                    {
+                        <span class="validated-badge">✓ Validiran</span>
+                    }
+                    <span class="timestamp">@lastDriver.GeneratedAt.ToString("dd.MM.yyyy HH:mm:ss")</span>
+                </div>
+            </div>
+            
+            <div class="driver-code-container">
+                <div class="code-header">
+                    <span>🐍 Python Modbus Driver</span>
+                    <button class="copy-btn" @onclick="() => CopyDriverCode()">📋 Kopiraj</button>
+                </div>
+                <pre class="driver-code"><code>@lastDriver.DriverCode</code></pre>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="no-data">
+            <div class="no-data-icon">📡</div>
+            <h3>Čekam podatke...</h3>
+            <p>Agent će prikazati rezultate čim obradi prvi zadatak.</p>
+        </div>
+    }
+
+    <!-- Recent Activity -->
+    @if (recentTicks.Any())
+    {
+        <div class="recent-activity">
+            <h3>📜 Nedavna Aktivnost</h3>
+            <div class="activity-list">
+                @foreach (var tick in recentTicks.Take(5))
+                {
+                    <div class="activity-item @(tick.Success ? "success" : "failed")">
+                        <span class="activity-icon">@(tick.Success ? "✅" : "❌")</span>
+                        <span class="activity-device">@tick.DeviceName</span>
+                        <span class="activity-confidence">@((tick.ConfidenceScore * 100).ToString("F0"))%</span>
+                        <span class="activity-attempts">@tick.InternalAttempts tries</span>
+                        <span class="activity-time">@tick.Timestamp.ToString("HH:mm:ss")</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private HubConnection? hubConnection;
+    private bool isConnected;
+    private string agentStatus = "Connecting...";
+    private bool pythonHealthy = true;
+    private int pendingTasks;
+    
+    private int totalTicks;
+    private int successfulTicks;
+    private int failedTicks;
+    
+    private TickNotification? latestTick;
+    private List<TickNotification> recentTicks = new();
+    
+    // Zadnji uspješno generisani driver
+    private LastSuccessfulDriver? lastDriver;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Dohvati početne statistike iz API-ja
+        await LoadInitialStatisticsAsync();
+        
+        // 2. Pokreni SignalR konekciju za real-time ažuriranja
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/agent"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<TickNotification>("TickCompleted", OnTickCompleted);
+        hubConnection.On<AgentStatusNotification>("AgentStatusChanged", OnStatusChanged);
+        hubConnection.On<TaskCreatedNotification>("TaskCreated", OnTaskCreated);
+
+        hubConnection.Closed += async (error) =>
+        {
+            isConnected = false;
+            agentStatus = "Disconnected";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        hubConnection.Reconnected += async (connectionId) =>
+        {
+            isConnected = true;
+            agentStatus = "Reconnected";
+            await LoadInitialStatisticsAsync(); // Refresh podataka nakon reconnect
+            await InvokeAsync(StateHasChanged);
+        };
+
+        try
+        {
+            await hubConnection.StartAsync();
+            isConnected = true;
+            agentStatus = "Connected";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to connect to SignalR hub");
+            agentStatus = "Connection Failed";
+        }
+    }
+    
+    private async Task LoadInitialStatisticsAsync()
+    {
+        try
+        {
+            var baseUri = Navigation.BaseUri.TrimEnd('/');
+            
+            // Dohvati statistike
+            var stats = await Http.GetFromJsonAsync<TaskStatistics>($"{baseUri}/api/tasks/statistics");
+            if (stats != null)
+            {
+                successfulTicks = stats.SuccessfulTasks;
+                failedTicks = stats.FailedTasks;
+                pendingTasks = stats.QueuedTasks + stats.ProcessingTasks;
+                totalTicks = stats.SuccessfulTasks + stats.FailedTasks;
+            }
+            
+            // Dohvati zadnji uspješni driver
+            await LoadLastSuccessfulDriverAsync();
+            
+            Logger.LogInformation("Loaded initial statistics: Success={Success}, Failed={Failed}, Pending={Pending}",
+                successfulTicks, failedTicks, pendingTasks);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load initial statistics");
+        }
+    }
+    
+    private async Task LoadLastSuccessfulDriverAsync()
+    {
+        try
+        {
+            var baseUri = Navigation.BaseUri.TrimEnd('/');
+            
+            // Dohvati listu uspješnih taskova
+            var tasksResponse = await Http.GetFromJsonAsync<TaskListResponse>($"{baseUri}/api/tasks?status=Success&pageSize=1");
+            
+            if (tasksResponse?.Tasks?.Any() == true)
+            {
+                var lastSuccessTask = tasksResponse.Tasks.First();
+                
+                if (lastSuccessTask.HasDriver)
+                {
+                    // Dohvati driver kod
+                    var driverResponse = await Http.GetFromJsonAsync<LastSuccessfulDriver>(
+                        $"{baseUri}/api/tasks/{lastSuccessTask.TaskId}/driver");
+                    
+                    if (driverResponse != null)
+                    {
+                        lastDriver = driverResponse with { DeviceName = lastSuccessTask.DeviceName };
+                        Logger.LogInformation("Loaded last successful driver for {Device}", lastDriver.DeviceName);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load last successful driver");
+        }
+    }
+    
+    // DTO za statistike
+    private record TaskStatistics
+    {
+        public int TotalTasks { get; init; }
+        public int QueuedTasks { get; init; }
+        public int ProcessingTasks { get; init; }
+        public int SuccessfulTasks { get; init; }
+        public int FailedTasks { get; init; }
+    }
+    
+    // DTO za zadnji driver
+    private record LastSuccessfulDriver
+    {
+        public Guid TaskId { get; init; }
+        public string DeviceName { get; init; } = "";
+        public string DriverCode { get; init; } = "";
+        public int Version { get; init; }
+        public bool IsValidated { get; init; }
+        public DateTime GeneratedAt { get; init; }
+    }
+    
+    // DTO za listu taskova
+    private record TaskListResponse
+    {
+        public List<TaskItem> Tasks { get; init; } = new();
+    }
+    
+    private record TaskItem
+    {
+        public Guid TaskId { get; init; }
+        public string DeviceName { get; init; } = "";
+        public string Status { get; init; } = "";
+        public bool HasDriver { get; init; }
+    }
+
+    private async Task OnTickCompleted(TickNotification notification)
+    {
+        latestTick = notification;
+        totalTicks++;
+        
+        if (notification.Success)
+        {
+            successfulTicks++;
+            // Osvježi zadnji uspješni driver
+            await LoadLastSuccessfulDriverAsync();
+        }
+        else
+        {
+            failedTicks++;
+        }
+
+        recentTicks.Insert(0, notification);
+        if (recentTicks.Count > 20)
+            recentTicks.RemoveAt(recentTicks.Count - 1);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnStatusChanged(AgentStatusNotification status)
+    {
+        agentStatus = status.Status;
+        pendingTasks = status.PendingTasks;
+        pythonHealthy = status.PythonServiceHealthy;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnTaskCreated(TaskCreatedNotification notification)
+    {
+        pendingTasks++;
+        // Optionally add to a list of recent tasks
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetStatusClass()
+    {
+        return agentStatus switch
+        {
+            "Working" => "working",
+            "Idle" => "idle",
+            "Error" => "error",
+            _ => "connecting"
+        };
+    }
+
+    private string GetAgentIcon(string agentName)
+    {
+        return agentName.ToLower() switch
+        {
+            "parser" => "📄",
+            "coder" => "💻",
+            "tester" => "🧪",
+            _ => "🤖"
+        };
+    }
+    
+    private void CopyDriverCode()
+    {
+        if (lastDriver != null)
+        {
+            // Logiraj zahtjev za kopiranje
+            // (Za pravu clipboard funkcionalnost bi trebali JS Interop)
+            Logger.LogInformation("Copy requested for driver: {Device}", lastDriver.DeviceName);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

@@ -1,0 +1,35 @@
+SOLAR INVERTER PROTOCOL SPECIFICATION
+=====================================
+Model: SolarMax 5000
+Protocol: Modbus RTU/TCP
+
+This document describes the communication protocol for reading
+inverter status and measurements.
+
+REGISTER MAP
+------------
+The inverter provides the following data points:
+
+- Power Output: Current power generation
+- Voltage: AC voltage measurement  
+- Current: AC current measurement
+- Temperature: Internal temperature
+- Status: Operating status code
+- Error Code: Active error code if any
+
+COMMUNICATION SETTINGS
+----------------------
+- Baud rate: 9600
+- Data bits: 8
+- Stop bits: 1
+- Parity: None
+- Slave ID: 1
+
+IMPORTANT NOTES
+---------------
+All values are 16-bit unsigned integers.
+Use function code 3 (Read Holding Registers).
+Big-endian byte ordering.
+
+For detailed register addresses, refer to the solar inverter
+technical manual section 5.
