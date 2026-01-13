@@ -42,7 +42,6 @@ class ValidatingModbusDataBlock(BaseModbusDataBlock):
         self.values = values or {}
         self.address = 0  # Base address
         
-        # Pre-populate values for valid addresses
         for addr in valid_addresses:
             if addr not in self.values:
                 self.values[addr] = self._generate_realistic_value(addr)
@@ -55,30 +54,21 @@ class ValidatingModbusDataBlock(BaseModbusDataBlock):
     
     def _generate_realistic_value(self, address: int) -> int:
         """Generate realistic values based on typical solar inverter registers."""
-        # Common patterns for solar inverter registers
         if 30000 <= address < 30100:
-            # Status registers
             return 1  # Running
         elif 30100 <= address < 30200:
-            # Power registers
             return 2500 + (address % 100)  # W
         elif 30200 <= address < 30300:
-            # Voltage registers
             return 230 + (address % 10)  # V
         elif 30300 <= address < 30400:
-            # Current registers
             return 10 + (address % 10)  # A
         elif 30400 <= address < 30500:
-            # Temperature registers
             return 25 + (address % 20)  # °C
         elif 30500 <= address < 30600:
-            # Energy registers
             return 1000 + (address % 500)  # kWh
         elif 40000 <= address < 50000:
-            # Holding registers (writable)
             return address % 1000
         else:
-            # Default value based on address
             return address % 65536
     
     def validate(self, address: int, count: int = 1) -> bool:
@@ -101,7 +91,6 @@ class ValidatingModbusDataBlock(BaseModbusDataBlock):
         Get values for addresses. Raises exception for invalid addresses.
         """
         if not self.validate(address, count):
-            # Return empty list - pymodbus will handle this as an error
             raise ModbusException("IllegalDataAddress")
         
         result = []
@@ -146,7 +135,6 @@ class StrictValidatingSlaveContext(ModbusSlaveContext):
         holding_values: Dict[int, int] = None,
         input_values: Dict[int, int] = None
     ):
-        # Create validating data blocks
         hr = ValidatingModbusDataBlock(
             valid_holding_addresses or set(),
             holding_values
@@ -174,16 +162,15 @@ class StrictValidatingSlaveContext(ModbusSlaveContext):
         Validate an address for a given function code.
         Returns False for invalid addresses (which triggers IllegalDataAddress).
         """
-        # Function code to store mapping
         fc_to_store = {
-            0x01: self.store['c'],  # Read Coils
-            0x02: self.store['d'],  # Read Discrete Inputs
-            0x03: self.store['h'],  # Read Holding Registers
-            0x04: self.store['i'],  # Read Input Registers
-            0x05: self.store['c'],  # Write Single Coil
-            0x06: self.store['h'],  # Write Single Holding Register
-            0x0F: self.store['c'],  # Write Multiple Coils
-            0x10: self.store['h'],  # Write Multiple Holding Registers
+            0x01: self.store['c'],
+            0x02: self.store['d'],
+            0x03: self.store['h'],
+            0x04: self.store['i'],
+            0x05: self.store['c'],
+            0x06: self.store['h'],
+            0x0F: self.store['c'],
+            0x10: self.store['h'],
         }
         
         store = fc_to_store.get(fc_as_hex)
@@ -201,7 +188,6 @@ class SolarInverterSimulator:
     Any attempt to read other addresses returns IllegalDataAddress (0x02).
     """
     
-    # Default valid address ranges for solar inverters (Sunspec-like)
     DEFAULT_VALID_HOLDING_ADDRESSES = set(range(30000, 30100)) | set(range(40000, 40100))
     DEFAULT_VALID_INPUT_ADDRESSES = set(range(30000, 30050))
     
@@ -269,7 +255,6 @@ class SolarInverterSimulator:
             self.holding_values.update(values)
             self.input_values.update(values)
         
-        # Recreate context so new addresses are enforced by the server
         self._context = self.create_context()
         logger.info(
             "Modbus context rebuilt with extracted addresses",
@@ -369,7 +354,6 @@ class DriverTester:
         }
         
         try:
-            # Create a test namespace with the driver code
             test_namespace = {
                 "asyncio": asyncio,
                 "struct": struct,
@@ -384,7 +368,6 @@ class DriverTester:
                 total_lines=len(driver_code.split('\n')) if driver_code else 0
             )
             
-            # Compile and execute the driver code
             try:
                 exec(driver_code, test_namespace)
             except SyntaxError as e:
@@ -404,7 +387,6 @@ class DriverTester:
                 result["error_message"] = f"Error executing driver code: {e}"
                 return result
             
-            # Look for test function in the driver
             test_func = test_namespace.get("run_self_test") or \
                         test_namespace.get("test_driver") or \
                         test_namespace.get("validate")
@@ -416,7 +398,6 @@ class DriverTester:
                         break
             
             if not test_func:
-                # No test function - try basic connectivity test
                 result = await self._run_basic_connectivity_test(
                     expected_registers,
                     valid_addresses
@@ -433,7 +414,6 @@ class DriverTester:
                 except Exception as e:
                     error_msg = str(e)
                     
-                    # Check for IllegalDataAddress
                     if "IllegalDataAddress" in error_msg or "0x02" in error_msg:
                         result["error_message"] = f"ILLEGAL DATA ADDRESS: Driver tried to access an invalid register. {error_msg}"
                         if valid_addresses:
@@ -466,7 +446,6 @@ class DriverTester:
             "suggested_addresses": []
         }
         
-        # Use CURRENT simulator addresses (after parser config)
         actual_server_addresses = get_simulator().valid_holding | get_simulator().valid_input
         
         logger.warning(
@@ -483,10 +462,6 @@ class DriverTester:
                 result["error_message"] = f"Failed to connect to {self.host}:{self.port}"
                 return result
             
-            # Determine which addresses to test
-            # IMPORTANT: Test the addresses from the GENERATED CODE (expected_registers)
-            # These might be WRONG (0x0001, 0x0002) and should FAIL!
-            # valid_addresses is from the SIMULATOR - only used for suggested_addresses
             if expected_registers:
                 test_addresses = list(expected_registers.keys())
                 logger.info(
@@ -494,8 +469,6 @@ class DriverTester:
                     addresses=test_addresses[:10]
                 )
             else:
-                # No addresses extracted from PDF - use default invalid addresses
-                # This forces proper implementation (code must read SOME registers)
                 test_addresses = [0x0000, 0x0001, 0x0002]
                 logger.warning(
                     "No expected registers - testing default invalid addresses",
@@ -506,11 +479,9 @@ class DriverTester:
                 response = await client.read_holding_registers(addr, count=1, slave=1)
                 
                 if response.isError():
-                    # Check if it's IllegalDataAddress
                     error_str = str(response)
                     
                     if "IllegalDataAddress" in error_str or hasattr(response, 'exception_code') and response.exception_code == 2:
-                        # Use current simulator addresses for suggestions
                         result["suggested_addresses"] = sorted(list(actual_server_addresses))[:10]
                         result["error_message"] = (
                             f"ILLEGAL DATA ADDRESS: Register 0x{addr:04X} ({addr}) does not exist. "
@@ -531,7 +502,6 @@ class DriverTester:
                 actual_value = response.registers[0]
                 result["tested_registers"].append(f"0x{addr:04X}={actual_value}")
                 
-                # Compare with expected if provided
                 if expected_registers and addr in expected_registers:
                     expected = expected_registers[addr]
                     if expected is not None and actual_value != expected:
@@ -561,7 +531,6 @@ class DriverTester:
         return result
 
 
-# Singleton instances
 _simulator: Optional[SolarInverterSimulator] = None
 _tester: Optional[DriverTester] = None
 
@@ -589,7 +558,6 @@ def configure_simulator_from_parsed_registers(
     """
     simulator = get_simulator()
     
-    # Extract addresses from parsed registers
     holding_addresses = set()
     input_addresses = set()
     values = {}
@@ -599,7 +567,6 @@ def configure_simulator_from_parsed_registers(
         if addr is None:
             continue
         
-        # Determine register type from function code or address range
         func_code = reg.get("function_code", 3)
         
         if func_code in [3, 6, 16]:  # Holding registers
@@ -609,11 +576,9 @@ def configure_simulator_from_parsed_registers(
         else:
             holding_addresses.add(addr)  # Default to holding
         
-        # Set a realistic value if provided or generate one
         if "value" in reg:
             values[addr] = reg["value"]
     
-    # Fallback: if nothing extracted OR addresses look too small (< 1000), use defaults (30xxx/40xxx)
     if (not holding_addresses and not input_addresses) or (
         holding_addresses and min(holding_addresses) < 1000
     ):

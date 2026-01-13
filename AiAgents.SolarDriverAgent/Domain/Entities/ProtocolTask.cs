@@ -132,7 +132,6 @@ public class ProtocolTask
     {
         Status = ProtocolTaskStatus.Failed;
         UpdatedAt = DateTime.UtcNow;
-        // SimulationLog se dodaje u LearnAsync fazi - izbjegavamo duplikate
     }
 
     /// <summary>

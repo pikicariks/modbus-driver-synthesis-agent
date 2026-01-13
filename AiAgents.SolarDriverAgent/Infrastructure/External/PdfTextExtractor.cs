@@ -52,11 +52,9 @@ public class PdfTextExtractor : IPdfTextExtractor
                 sb.AppendLine($"=== PAGE {pageNum} ===");
                 sb.AppendLine();
 
-                // Ekstraktuj tekst sa strukturom
                 var pageText = ExtractPageWithStructure(page);
                 sb.Append(pageText);
 
-                // Pokušaj ekstraktovati tabele
                 var tables = ExtractTables(page);
                 if (!string.IsNullOrWhiteSpace(tables))
                 {
@@ -98,17 +96,14 @@ public class PdfTextExtractor : IPdfTextExtractor
 
         try
         {
-            // Koristi NearestNeighbourWordExtractor za bolju ekstrakciju riječi
             var words = page.GetWords(NearestNeighbourWordExtractor.Instance);
 
             if (!words.Any())
             {
-                // Fallback na osnovni tekst
                 sb.AppendLine(page.Text);
                 return sb.ToString();
             }
 
-            // Koristi DocstrumBoundingBoxes za segmentaciju
             var blocks = DocstrumBoundingBoxes.Instance.GetBlocks(words);
 
             foreach (var block in blocks.OrderBy(b => -b.BoundingBox.Top).ThenBy(b => b.BoundingBox.Left))
@@ -141,10 +136,8 @@ public class PdfTextExtractor : IPdfTextExtractor
             if (!words.Any())
                 return string.Empty;
 
-            // Grupiši riječi po Y poziciji (redovi)
             var rows = GroupWordsIntoRows(words);
 
-            // Pronađi redove koji izgledaju kao tabela (više od 2 kolone sa konzistentnim razmacima)
             var tableRows = DetectTableRows(rows);
 
             if (tableRows.Any())
@@ -156,7 +149,6 @@ public class PdfTextExtractor : IPdfTextExtractor
                 }
             }
 
-            // Traži specifične Modbus pattern-e
             var modbusInfo = ExtractModbusPatterns(page.Text);
             if (!string.IsNullOrWhiteSpace(modbusInfo))
             {
@@ -179,7 +171,7 @@ public class PdfTextExtractor : IPdfTextExtractor
     private List<List<Word>> GroupWordsIntoRows(List<Word> words)
     {
         var rows = new List<List<Word>>();
-        var tolerance = 5.0; // Tolerancija za Y poziciju
+        var tolerance = 5.0;
 
         var sortedWords = words.OrderByDescending(w => w.BoundingBox.Bottom).ToList();
 
@@ -192,7 +184,6 @@ public class PdfTextExtractor : IPdfTextExtractor
 
             if (currentRow == null || Math.Abs(wordY - currentY) > tolerance)
             {
-                // Novi red
                 currentRow = new List<Word>();
                 rows.Add(currentRow);
                 currentY = wordY;
@@ -201,7 +192,6 @@ public class PdfTextExtractor : IPdfTextExtractor
             currentRow.Add(word);
         }
 
-        // Sortiraj riječi u svakom redu po X poziciji
         foreach (var row in rows)
         {
             row.Sort((a, b) => a.BoundingBox.Left.CompareTo(b.BoundingBox.Left));
@@ -222,7 +212,6 @@ public class PdfTextExtractor : IPdfTextExtractor
             if (row.Count < 2)
                 continue;
 
-            // Provjeri da li red ima konzistentne razmake (tabela)
             var gaps = new List<double>();
             for (int i = 1; i < row.Count; i++)
             {
@@ -230,10 +219,8 @@ public class PdfTextExtractor : IPdfTextExtractor
                 gaps.Add(gap);
             }
 
-            // Ako ima bar jedan značajan razmak (>20), tretiramo kao tabelu
             if (gaps.Any(g => g > 20))
             {
-                // Grupiši riječi u ćelije na osnovu razmaka
                 var cells = new List<string>();
                 var currentCell = new StringBuilder();
                 currentCell.Append(row[0].Text);
@@ -244,7 +231,6 @@ public class PdfTextExtractor : IPdfTextExtractor
 
                     if (gap > 20)
                     {
-                        // Nova ćelija
                         cells.Add(currentCell.ToString().Trim());
                         currentCell.Clear();
                     }
@@ -258,7 +244,6 @@ public class PdfTextExtractor : IPdfTextExtractor
 
                 cells.Add(currentCell.ToString().Trim());
 
-                // Dodaj samo ako ima više od jedne ćelije
                 if (cells.Count > 1)
                 {
                     tableRows.Add(cells);
@@ -281,14 +266,12 @@ public class PdfTextExtractor : IPdfTextExtractor
         {
             var trimmedLine = line.Trim();
 
-            // Traži hex adrese (0x0000, 0x0010, itd.)
             if (System.Text.RegularExpressions.Regex.IsMatch(trimmedLine, @"0x[0-9a-fA-F]{2,4}"))
             {
                 sb.AppendLine(trimmedLine);
                 continue;
             }
 
-            // Traži decimalne adrese sa "register" ili "address" ključnim riječima
             if (System.Text.RegularExpressions.Regex.IsMatch(trimmedLine, 
                 @"(?:register|address|addr|reg)[:\s]*\d+", 
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase))
@@ -297,7 +280,6 @@ public class PdfTextExtractor : IPdfTextExtractor
                 continue;
             }
 
-            // Traži function code reference
             if (System.Text.RegularExpressions.Regex.IsMatch(trimmedLine,
                 @"(?:function\s*code|FC)[:\s]*(?:0?[1-6]|1[56])",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase))
@@ -306,7 +288,6 @@ public class PdfTextExtractor : IPdfTextExtractor
                 continue;
             }
 
-            // Traži data type keywords u kontekstu registara
             if (System.Text.RegularExpressions.Regex.IsMatch(trimmedLine,
                 @"(?:uint16|int16|uint32|int32|float|word|dword|holding|input|coil)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase) &&

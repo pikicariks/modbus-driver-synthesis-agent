@@ -31,22 +31,18 @@ def create_driver_synthesis_workflow() -> StateGraph:
     5. Finalize - Store experience and return result
     """
     
-    # Create the graph
     workflow = StateGraph(AgentState)
     
-    # Add nodes
     workflow.add_node("parser", parse_protocol)
     workflow.add_node("coder", generate_code)
     workflow.add_node("tester", test_driver)
     workflow.add_node("increment_and_retry", increment_attempt)
     workflow.add_node("finalize", finalize_result)
     
-    # Add edges
     workflow.set_entry_point("parser")
     workflow.add_edge("parser", "coder")
     workflow.add_edge("coder", "tester")
     
-    # Conditional edge: retry or finalize
     workflow.add_conditional_edges(
         "tester",
         should_retry,
@@ -56,16 +52,13 @@ def create_driver_synthesis_workflow() -> StateGraph:
         }
     )
     
-    # After incrementing, go back to coder
     workflow.add_edge("increment_and_retry", "coder")
     
-    # Finalize ends the workflow
     workflow.add_edge("finalize", END)
     
     return workflow.compile()
 
 
-# Compiled workflow singleton
 _workflow = None
 
 
@@ -95,7 +88,6 @@ async def synthesize_driver(
                target_language=target_language,
                text_length=len(protocol_text))
     
-    # SENSE phase: Query ChromaDB for relevant past experiences
     experience_context = previous_experience
     if not experience_context:
         try:
@@ -111,7 +103,6 @@ async def synthesize_driver(
         except Exception as e:
             logger.warning("Failed to query experience store", error=str(e))
     
-    # Initialize state
     initial_state: AgentState = {
         "raw_protocol_text": protocol_text,
         "device_name": device_name,
@@ -143,7 +134,6 @@ async def synthesize_driver(
         "experience_id": None
     }
     
-    # Run the workflow
     workflow = get_workflow()
     final_state = await workflow.ainvoke(initial_state)
     

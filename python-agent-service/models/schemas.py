@@ -62,26 +62,20 @@ class SynthesizeDriverResponse(BaseModel):
     driver_code: Optional[str] = None
     target_language: TargetLanguage
     
-    # Reliability metrics
     confidence_score: float = Field(
         ge=0.0, le=1.0,
         description="Confidence score from 0 to 1"
     )
     
-    # Internal attempt logs
     internal_attempts: List[InternalAttemptLog] = Field(default_factory=list)
     total_internal_attempts: int = 0
     
-    # Test results
     test_result: Optional[ModbusTestResult] = None
     
-    # Extracted protocol info
     extracted_registers: List[dict] = Field(default_factory=list)
     
-    # Error info if failed
     error_message: Optional[str] = None
     
-    # Experience ID for tracking
     experience_id: Optional[str] = None
 
 
@@ -92,16 +86,13 @@ class ExperienceRecord(BaseModel):
     protocol_signature: str  # Hash ili ključne karakteristike protokola
     device_type: Optional[str] = None
     
-    # Problem details
     problem_type: str  # "byte_mismatch", "register_error", "compilation_error"
     problematic_bytes: Optional[str] = None
     byte_position: Optional[int] = None
     error_message: str
     
-    # Solution
     solution_applied: str
     successful_code_snippet: Optional[str] = None
     
-    # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)
     success: bool = False

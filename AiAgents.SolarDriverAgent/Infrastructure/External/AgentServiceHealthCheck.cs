@@ -15,7 +15,6 @@ public class AgentServiceHealthCheck : IAgentServiceHealthCheck
     private readonly ILogger<AgentServiceHealthCheck> _logger;
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(5);
 
-    // Cache za health status (da ne spamamo health endpoint)
     private HealthCheckResult? _cachedResult;
     private DateTime _cacheExpiry = DateTime.MinValue;
     private readonly TimeSpan _cacheDuration = TimeSpan.FromSeconds(10);
@@ -36,7 +35,6 @@ public class AgentServiceHealthCheck : IAgentServiceHealthCheck
 
     public async Task<HealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
-        // Provjeri cache
         if (_cachedResult != null && DateTime.UtcNow < _cacheExpiry)
         {
             return _cachedResult;
@@ -45,7 +43,6 @@ public class AgentServiceHealthCheck : IAgentServiceHealthCheck
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            // Double-check nakon lock-a
             if (_cachedResult != null && DateTime.UtcNow < _cacheExpiry)
             {
                 return _cachedResult;
@@ -53,7 +50,6 @@ public class AgentServiceHealthCheck : IAgentServiceHealthCheck
 
             var result = await PerformHealthCheckAsync(cancellationToken);
 
-            // Cache rezultat
             _cachedResult = result;
             _cacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
 

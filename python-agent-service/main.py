@@ -21,7 +21,6 @@ from models.schemas import (
 from agents.workflow import synthesize_driver
 from simulator.modbus_simulator import get_simulator
 
-# Configure structured logging
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -48,10 +47,8 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     settings = get_settings()
     
-    # Startup
     logger.info("Starting Multi-Agent Driver Synthesis Service")
     
-    # Start Modbus simulator in background
     simulator = get_simulator()
     simulator_task = asyncio.create_task(
         simulator.start(settings.modbus_host, settings.modbus_port)
@@ -63,7 +60,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
     logger.info("Shutting down service")
     simulator.stop()
     simulator_task.cancel()
@@ -89,7 +85,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -117,7 +112,6 @@ async def synthesize_driver_endpoint(request: SynthesizeDriverRequest) -> Synthe
                text_length=len(request.protocol_text))
     
     try:
-        # Run the multi-agent workflow
         result = await synthesize_driver(
             protocol_text=request.protocol_text,
             device_name=request.device_name,
@@ -125,7 +119,6 @@ async def synthesize_driver_endpoint(request: SynthesizeDriverRequest) -> Synthe
             previous_experience=request.previous_experience
         )
         
-        # Convert attempt logs to response model
         attempt_logs = []
         for log in result.get("attempt_logs", []):
             attempt_logs.append(InternalAttemptLog(
@@ -137,7 +130,6 @@ async def synthesize_driver_endpoint(request: SynthesizeDriverRequest) -> Synthe
                 duration_ms=log.get("duration_ms", 0)
             ))
         
-        # Build test result
         test_result = None
         if result.get("tested_registers"):
             test_result = ModbusTestResult(
@@ -188,14 +180,12 @@ async def get_experiences(limit: int = 50, device: str = None):
     try:
         store = get_experience_store()
         
-        # Get all experiences
         results = store._collection.get(include=["metadatas", "documents"])
         
         experiences = []
         for i in range(len(results.get("ids", []))):
             meta = results["metadatas"][i] if results.get("metadatas") else {}
             
-            # Filter by device if specified
             if device and meta.get("device_type", "").lower() != device.lower():
                 continue
             
@@ -212,11 +202,9 @@ async def get_experiences(limit: int = 50, device: str = None):
                 "created_at": meta.get("created_at", "")
             })
         
-        # Sort by created_at descending and limit
         experiences.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         experiences = experiences[:limit]
         
-        # Summary stats
         total = len(experiences)
         successful = sum(1 for e in experiences if e.get("success"))
         

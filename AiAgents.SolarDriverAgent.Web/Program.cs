@@ -7,11 +7,9 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Blazor Server
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Add Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -24,21 +22,16 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// Add SignalR
 builder.Services.AddSignalR();
 
-// Add HttpClient za Blazor komponente (za pozivanje lokalnog API-ja)
 builder.Services.AddHttpClient();
 
-// Infrastructure services (DB, repos, clients, runner)
 builder.Services.AddSolarDriverInfrastructure(builder.Configuration);
 
-// Background Service
 builder.Services.AddHostedService<AgentHostedService>();
 
 var app = builder.Build();
 
-// Kreiraj/migriraj bazu na startu i popravi zaglavljene taskove
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -47,8 +40,6 @@ using (var scope = app.Services.CreateScope())
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Database initialized at: {Path}", dbContext.Database.GetDbConnection().DataSource);
     
-    // Popravi taskove koji su ostali zaglavljeni u "Processing" statusu
-    // (ovo se dešava ako se servis restartuje dok je task u obradi)
     var stuckTasks = dbContext.ProtocolTasks
         .Where(t => t.Status == AiAgents.SolarDriverAgent.Domain.Enums.ProtocolTaskStatus.Processing)
         .ToList();
@@ -61,14 +52,12 @@ using (var scope = app.Services.CreateScope())
         {
             if (task.AttemptCount >= task.MaxAttempts)
             {
-                // Iscrpljeni svi pokušaji - označi kao Failed
                 task.ForceFailedStatus();
                 logger.LogInformation("Task {TaskId} ({DeviceName}) marked as Failed after {Attempts} attempts.", 
                     task.Id, task.DeviceName, task.AttemptCount);
             }
             else
             {
-                // Ima još pokušaja - vrati u Queued
                 task.RevertToQueued();
                 logger.LogInformation("Task {TaskId} ({DeviceName}) reverted to Queued.", task.Id, task.DeviceName);
             }
@@ -79,7 +68,6 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Configure pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -95,13 +83,10 @@ app.UseAntiforgery();
 
 app.UseAuthorization();
 
-// Map controllers
 app.MapControllers();
 
-// Map SignalR hub
 app.MapHub<AgentHub>("/hubs/agent");
 
-// Map Blazor
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

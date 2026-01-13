@@ -19,7 +19,6 @@ public class ProtocolTaskRepository : IProtocolTaskRepository
 
     public async Task<ProtocolTask?> GetNextEligibleTaskAsync(CancellationToken cancellationToken = default)
     {
-        // Pronađi prvi zadatak koji je Queued ili Failed (sa mogućnošću retry-a)
         return await _context.ProtocolTasks
             .Include(t => t.CurrentDriver)
             .Include(t => t.SimulationLogs)
@@ -51,26 +50,21 @@ public class ProtocolTaskRepository : IProtocolTaskRepository
         ProtocolTaskStatus? statusFilter = null,
         CancellationToken cancellationToken = default)
     {
-        // Validacija parametara
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        // Bazni query - uključuje SimulationLogs za prikaz iteracija
         var query = _context.ProtocolTasks
             .Include(t => t.CurrentDriver)
             .Include(t => t.SimulationLogs)
             .AsNoTracking();
 
-        // Filter po statusu
         if (statusFilter.HasValue)
         {
             query = query.Where(t => t.Status == statusFilter.Value);
         }
 
-        // Ukupan broj
         var totalCount = await query.CountAsync(cancellationToken);
 
-        // Dohvati stranicu
         var items = await query
             .OrderByDescending(t => t.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -108,10 +102,6 @@ public class ProtocolTaskRepository : IProtocolTaskRepository
 
     public async Task UpdateAsync(ProtocolTask task, CancellationToken cancellationToken = default)
     {
-        // SQLite/SQL Server: Standardni EF Core pristup
-        // Task je praćen iz SENSE faze, samo trebamo osigurati da su child entiteti registrovani
-        
-        // Registruj novi CurrentDriver ako postoji i nije praćen
         if (task.CurrentDriver != null)
         {
             var driverEntry = _context.Entry(task.CurrentDriver);
@@ -121,7 +111,6 @@ public class ProtocolTaskRepository : IProtocolTaskRepository
             }
         }
         
-        // Registruj nove SimulationLogs
         foreach (var log in task.SimulationLogs)
         {
             var logEntry = _context.Entry(log);
@@ -131,7 +120,6 @@ public class ProtocolTaskRepository : IProtocolTaskRepository
             }
         }
         
-        // Sačuvaj promjene - EF Core će automatski detektovati izmjene na praćenom task entitetu
         await _context.SaveChangesAsync(cancellationToken);
     }
 

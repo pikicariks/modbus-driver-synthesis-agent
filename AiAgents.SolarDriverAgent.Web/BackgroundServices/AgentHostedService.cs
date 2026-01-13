@@ -55,13 +55,11 @@ public class AgentHostedService : BackgroundService
                 var healthCheck = scope.ServiceProvider.GetRequiredService<IAgentServiceHealthCheck>();
                 var health = await healthCheck.CheckHealthAsync(stoppingToken);
 
-                // Provjeri da li ima posla
                 var hasPendingWork = await runner.HasPendingWorkAsync(stoppingToken);
                 Console.WriteLine($"[AGENT TICK] HasPendingWork = {hasPendingWork}");
 
                 if (!hasPendingWork)
                 {
-                    // Emituj idle status
                     var pendingCount = await taskRepo.GetTotalCountAsync(
                         Domain.Enums.ProtocolTaskStatus.Queued, stoppingToken);
 
@@ -76,13 +74,11 @@ public class AgentHostedService : BackgroundService
                 }
                 else
                 {
-                    // Dohvati task info za logove
                     var nextTask = await taskRepo.GetNextEligibleTaskAsync(stoppingToken);
                     var taskId = nextTask?.Id ?? Guid.Empty;
                     var deviceName = nextTask?.DeviceName ?? "Unknown";
                     var attemptNumber = (nextTask?.AttemptCount ?? 0) + 1;
                     
-                    // Emituj working status
                     await _hubContext.Clients.All.AgentStatusChanged(new AgentStatusNotification
                     {
                         Status = "Working",
@@ -90,15 +86,12 @@ public class AgentHostedService : BackgroundService
                         PythonServiceHealthy = health.IsHealthy
                     });
 
-                    // === SENSE Phase ===
                     await EmitProcessingLog(taskId, deviceName, "SENSE", "Started", 
                         "Čitanje PDF dokumenta i ekstrakcija teksta...", attemptNumber);
                     
-                    // === THINK Phase ===
                     await EmitProcessingLog(taskId, deviceName, "THINK", "Started",
                         "Priprema zahtjeva za Python agent servis...", attemptNumber);
                     
-                    // === ACT Phase (Python processing) ===
                     await EmitProcessingLog(taskId, deviceName, "PYTHON_PARSER", "InProgress",
                         "📋 Parser analizira Modbus specifikaciju...", attemptNumber);
                     
@@ -108,7 +101,6 @@ public class AgentHostedService : BackgroundService
                     await EmitProcessingLog(taskId, deviceName, "PYTHON_TESTER", "InProgress",
                         "🧪 Tester validira kod protiv Modbus simulatora...", attemptNumber);
 
-                    // Izvrši tick (ovo poziva Python servis)
                     var tickResult = await runner.StepAsync(stoppingToken);
 
                     if (tickResult.DidWork && tickResult.Data != null)
@@ -118,7 +110,6 @@ public class AgentHostedService : BackgroundService
                             tickResult.Data.AgentLogs.Count,
                             tickResult.Data.ErrorMessage ?? "null");
                         
-                        // Emituj Python agent logove iz rezultata
                         foreach (var agentLog in tickResult.Data.AgentLogs)
                         {
                             _logger.LogDebug(
@@ -133,7 +124,6 @@ public class AgentHostedService : BackgroundService
                                 agentLog.DurationMs,
                                 agentLog.ErrorMessage);
                             
-                            // Provjeri svaki agent log za ILLEGAL DATA ADDRESS
                             if (!string.IsNullOrEmpty(agentLog.ErrorMessage) &&
                                 (agentLog.ErrorMessage.Contains("ILLEGAL", StringComparison.OrdinalIgnoreCase) ||
                                  agentLog.ErrorMessage.Contains("does not exist", StringComparison.OrdinalIgnoreCase)))
@@ -148,7 +138,6 @@ public class AgentHostedService : BackgroundService
                             }
                         }
                         
-                        // === Check for ILLEGAL DATA ADDRESS error u main error message ===
                         var errorMsg = tickResult.Data.ErrorMessage ?? "";
                         _logger.LogDebug("Checking main ErrorMessage for ILLEGAL: '{Error}'", errorMsg);
                         
@@ -165,7 +154,6 @@ public class AgentHostedService : BackgroundService
                                 errorMsg.Length > 300 ? errorMsg[..300] + "..." : errorMsg);
                         }
                         
-                        // === LEARN Phase ===
                         await EmitProcessingLog(taskId, deviceName, "LEARN", 
                             tickResult.HasError ? "Failed" : "Completed",
                             tickResult.HasError 
@@ -175,7 +163,6 @@ public class AgentHostedService : BackgroundService
                             tickResult.DurationMs,
                             tickResult.HasError ? tickResult.Data.ErrorMessage : null);
                         
-                        // === Experience Store notification ===
                         if (!string.IsNullOrEmpty(tickResult.Data.ExperienceId))
                         {
                             await EmitProcessingLog(taskId, deviceName, "EXPERIENCE_STORE", 
@@ -188,7 +175,6 @@ public class AgentHostedService : BackgroundService
                                     : $"Success - Registers: {string.Join(", ", tickResult.Data.TestedRegisters.Take(3))}");
                         }
 
-                        // Emituj bogat rezultat putem SignalR
                         var notification = CreateNotification(tickResult);
                         await _hubContext.Clients.All.TickCompleted(notification);
 
@@ -206,7 +192,6 @@ public class AgentHostedService : BackgroundService
             {
                 _logger.LogError(ex, "Error in agent tick");
 
-                // Emituj error status
                 await _hubContext.Clients.All.AgentStatusChanged(new AgentStatusNotification
                 {
                     Status = "Error",
@@ -308,7 +293,6 @@ public class AgentHostedService : BackgroundService
         
         try
         {
-            // Console log for immediate visibility
             Console.WriteLine($"[SignalR] Emitting: {phase} - {status} - {message}");
             
             await _hubContext.Clients.All.ProcessingLog(entry);

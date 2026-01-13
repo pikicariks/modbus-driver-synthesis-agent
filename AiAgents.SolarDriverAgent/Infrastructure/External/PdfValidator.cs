@@ -11,13 +11,8 @@ public class PdfValidator : IPdfValidator
 {
     private readonly ILogger<PdfValidator> _logger;
 
-    // PDF magic bytes: %PDF-
     private static readonly byte[] PdfMagicBytes = { 0x25, 0x50, 0x44, 0x46, 0x2D }; // %PDF-
-
-    // Minimalna veličina validnog PDF-a (header + minimal content)
     private const int MinimumPdfSize = 100;
-
-    // Maksimalna veličina (50 MB)
     private const long MaximumPdfSize = 50 * 1024 * 1024;
 
     public PdfValidator(ILogger<PdfValidator> logger)
@@ -34,7 +29,6 @@ public class PdfValidator : IPdfValidator
 
         var fileSize = pdfDocument.Length;
 
-        // 1. Provjeri veličinu
         if (fileSize < MinimumPdfSize)
         {
             _logger.LogWarning("PDF too small: {Size} bytes (minimum: {Min})", fileSize, MinimumPdfSize);
@@ -51,7 +45,6 @@ public class PdfValidator : IPdfValidator
                 fileSize);
         }
 
-        // 2. Provjeri magic bytes (%PDF-)
         if (!HasValidMagicBytes(pdfDocument))
         {
             _logger.LogWarning("Invalid PDF magic bytes. First 10 bytes: {Bytes}",
@@ -61,10 +54,8 @@ public class PdfValidator : IPdfValidator
                 fileSize);
         }
 
-        // 3. Provjeri PDF verziju iz header-a
         var pdfVersion = ExtractPdfVersion(pdfDocument);
 
-        // 4. Provjeri %%EOF marker na kraju
         if (!HasValidEofMarker(pdfDocument))
         {
             _logger.LogWarning("PDF missing %%EOF marker - file may be truncated");
@@ -73,7 +64,6 @@ public class PdfValidator : IPdfValidator
                 fileSize);
         }
 
-        // 5. Pokušaj otvoriti sa PdfPig za detaljnu validaciju
         try
         {
             using var stream = new MemoryStream(pdfDocument);
@@ -87,11 +77,9 @@ public class PdfValidator : IPdfValidator
                 return PdfValidationResult.Invalid("PDF document has no pages.", fileSize);
             }
 
-            // Provjeri da li ima ekstraktabilnog teksta
             var hasText = false;
             var totalTextLength = 0;
 
-            // Provjeri prvih nekoliko stranica
             var pagesToCheck = Math.Min(pageCount, 3);
             for (int i = 1; i <= pagesToCheck; i++)
             {
@@ -150,16 +138,13 @@ public class PdfValidator : IPdfValidator
     /// </summary>
     private static string? ExtractPdfVersion(byte[] data)
     {
-        // PDF header format: %PDF-X.Y
         if (data.Length < 8)
             return null;
 
         try
         {
-            // Čitaj prvih 8-10 bajtova kao string
             var header = System.Text.Encoding.ASCII.GetString(data, 0, Math.Min(10, data.Length));
 
-            // Traži pattern %PDF-X.Y
             if (header.StartsWith("%PDF-"))
             {
                 var versionPart = header.Substring(5);
@@ -172,7 +157,6 @@ public class PdfValidator : IPdfValidator
         }
         catch
         {
-            // Ignore parsing errors
         }
 
         return null;
@@ -183,7 +167,6 @@ public class PdfValidator : IPdfValidator
     /// </summary>
     private static bool HasValidEofMarker(byte[] data)
     {
-        // Traži %%EOF u zadnjih 1024 bajta
         var searchLength = Math.Min(1024, data.Length);
         var searchStart = data.Length - searchLength;
 

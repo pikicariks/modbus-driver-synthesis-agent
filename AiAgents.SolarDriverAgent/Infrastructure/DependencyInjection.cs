@@ -23,13 +23,11 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Database - SQLite za development, SQL Server za produkciju
         services.AddDbContext<AppDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
             if (string.IsNullOrEmpty(connectionString))
             {
-                // Koristi SQLite za development (puno pouzdanije od InMemory)
                 var dbPath = Path.Combine(AppContext.BaseDirectory, "SolarDriverAgent.db");
                 options.UseSqlite($"Data Source={dbPath}");
             }
@@ -39,36 +37,29 @@ public static class DependencyInjection
             }
         });
 
-        // Repositories
         services.AddScoped<IProtocolTaskRepository, ProtocolTaskRepository>();
         services.AddScoped<ISimulationLogRepository, SimulationLogRepository>();
 
-        // External services configuration
         services.Configure<LlmClientOptions>(
             configuration.GetSection(LlmClientOptions.SectionName));
 
-        // Agent Synthesis Client (za Python multi-agent servis)
         services.AddHttpClient<IAgentSynthesisClient, AgentSynthesisClient>()
             .ConfigureHttpClient((sp, client) =>
             {
                 var config = configuration.GetSection(LlmClientOptions.SectionName);
-                var timeout = config.GetValue("TimeoutSeconds", 300); // Duži timeout za multi-agent
+                var timeout = config.GetValue("TimeoutSeconds", 300);
                 client.Timeout = TimeSpan.FromSeconds(timeout);
             })
             .AddPolicyHandler(GetRetryPolicy(configuration))
             .AddPolicyHandler(GetCircuitBreakerPolicy(configuration));
 
-        // Health Check za Python servis
         services.AddHttpClient<IAgentServiceHealthCheck, AgentServiceHealthCheck>()
             .AddPolicyHandler(GetHealthRetryPolicy(configuration));
 
-        // PDF Text Extractor (koristi PdfPig za stvarnu ekstrakciju)
         services.AddSingleton<IPdfTextExtractor, PdfTextExtractor>();
 
-        // PDF Validator (magic bytes + struktura)
         services.AddSingleton<IPdfValidator, PdfValidator>();
 
-        // Agent Runner
         services.AddScoped<DriverSynthesisRunner>();
 
         return services;
@@ -85,10 +76,7 @@ public static class DependencyInjection
             .WaitAndRetryAsync(
                 retryCount: retries,
                 sleepDurationProvider: attempt => TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt - 1)),
-                onRetry: (outcome, timespan, attempt, ctx) =>
-                {
-                    // No-op log hook (logger not available here); rely on handler logs
-                });
+                onRetry: (outcome, timespan, attempt, ctx) => { });
     }
 
     private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy(IConfiguration configuration)

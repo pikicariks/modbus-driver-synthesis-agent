@@ -55,7 +55,6 @@ async def parse_protocol(state: AgentState) -> Dict[str, Any]:
     )
     
     try:
-        # Invoke LLM to parse the protocol
         chain = PARSER_PROMPT | llm
         response = await chain.ainvoke({
             "protocol_text": state["raw_protocol_text"][:15000]  # Limit context
@@ -63,36 +62,25 @@ async def parse_protocol(state: AgentState) -> Dict[str, Any]:
         
         parsed_spec = response.content
         
-        # Extract register information using regex
         registers = extract_registers(parsed_spec)
         
-        # Log extracted addresses (for debugging)
         logger.info(
             "Parser extracted registers from PDF",
             count=len(registers),
             sample=[r.get("address") for r in registers[:10]]
         )
         
-        # Check if extracted registers have valid addresses (>= 1000)
         valid_registers = [r for r in registers if r.get("address", 0) >= 1000]
         
-        # Compute protocol signature for RAG
         from experience_store.chroma_store import get_experience_store
         store = get_experience_store()
         signature = store.compute_protocol_signature(state["raw_protocol_text"])
         
-        # ============================================================
-        # IMPORTANT: Configure simulator to ALWAYS use 30000+ addresses
-        # This ensures that if Coder uses wrong addresses (0x0000, etc.),
-        # the Tester will FAIL with IllegalDataAddress!
-        # ============================================================
         from simulator.modbus_simulator import get_simulator
         simulator = get_simulator()
         
-        # Simulator always accepts 30000+ range (solar inverter standard)
         simulator_addresses = set(range(30000, 30100)) | set(range(40000, 40050))
         
-        # Add any valid addresses from PDF too
         for r in valid_registers:
             simulator_addresses.add(r.get("address"))
         
@@ -101,26 +89,19 @@ async def parse_protocol(state: AgentState) -> Dict[str, Any]:
             input_addresses=simulator_addresses
         )
         logger.info(
-            "✅ Simulator configured with 30000+ addresses",
+            "Simulator configured with 30000+ addresses",
             address_count=len(simulator_addresses),
             sample=sorted(list(simulator_addresses))[:10]
         )
         
-        # ============================================================
-        # KEY FOR DEMO: Do NOT provide fallback addresses to Coder!
-        # If PDF has no valid addresses, Coder will guess wrong (0x0000, etc.)
-        # First attempt will FAIL, second attempt will get suggested addresses
-        # ============================================================
         if not valid_registers:
             logger.warning(
-                "⚠️ NO VALID REGISTERS FOUND IN PDF - Coder will likely guess wrong!"
+                "NO VALID REGISTERS FOUND IN PDF - Coder will likely guess wrong!"
             )
             logger.warning(
-                "📋 This is INTENTIONAL for demo: First attempt should FAIL, "
+                "This is INTENTIONAL for demo: First attempt should FAIL, "
                 "then retry with suggested addresses should SUCCEED."
             )
-            # Keep empty/original registers - don't add fallback!
-            # Coder will see no valid addresses and guess 0x0000, 0x0001, etc.
         
         duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
@@ -173,14 +154,11 @@ def extract_registers(parsed_text: str) -> List[Dict[str, Any]]:
     """Extract register definitions from parsed text."""
     registers = []
     
-    # Pattern to find register definitions
-    # Matches patterns like: 0x0010, address 0x10, register 16, etc.
     register_pattern = re.compile(
         r'(?:0x([0-9a-fA-F]+)|address[:\s]+(\d+)|register[:\s]+(\d+))',
         re.IGNORECASE
     )
     
-    # Pattern to find data types
     type_pattern = re.compile(
         r'(uint16|int16|uint32|int32|float32|float|string|boolean)',
         re.IGNORECASE
@@ -190,7 +168,6 @@ def extract_registers(parsed_text: str) -> List[Dict[str, Any]]:
     current_register = None
     
     for line in lines:
-        # Look for register address
         reg_match = register_pattern.search(line)
         if reg_match:
             addr = reg_match.group(1) or reg_match.group(2) or reg_match.group(3)
@@ -208,12 +185,10 @@ def extract_registers(parsed_text: str) -> List[Dict[str, Any]]:
                     "function_code": 3  # Default: holding register
                 }
                 
-                # Look for data type in same line
                 type_match = type_pattern.search(line)
                 if type_match:
                     current_register["data_type"] = type_match.group(1).lower()
                 
-                # Check for input register hint
                 if "input" in line.lower() or "fc 4" in line.lower():
                     current_register["function_code"] = 4
                 

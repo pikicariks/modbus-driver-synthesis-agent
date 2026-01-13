@@ -47,8 +47,6 @@ async def test_driver(state: AgentState) -> Dict[str, Any]:
     try:
         tester = get_tester()
         
-        # Build expected registers from PDF-extracted addresses
-        # These are the addresses the GENERATED CODE will try to use
         expected_registers = {}
         pdf_addresses = set()
         
@@ -64,7 +62,6 @@ async def test_driver(state: AgentState) -> Dict[str, Any]:
             sample=sorted(list(pdf_addresses))[:10]
         )
         
-        # Get SIMULATOR's valid addresses (30000+) - for error context only!
         from simulator.modbus_simulator import get_simulator
         simulator = get_simulator()
         simulator_valid_addresses = simulator.valid_holding | simulator.valid_input
@@ -75,9 +72,6 @@ async def test_driver(state: AgentState) -> Dict[str, Any]:
             sample=sorted(list(simulator_valid_addresses))[:10]
         )
         
-        # CRITICAL FOR DEMO:
-        # - If PDF has addresses 0x0001, 0x0002 → test those (will FAIL)
-        # - Pass simulator addresses for suggested_addresses (for retry)
         result = await tester.test_driver_code(
             state["generated_code"],
             expected_registers if expected_registers else None,
@@ -170,7 +164,6 @@ async def increment_attempt(state: AgentState) -> Dict[str, Any]:
     """
     suggested = state.get("suggested_addresses", [])
     
-    # Create new registers from suggested addresses
     if suggested:
         new_registers = [
             {
@@ -180,11 +173,11 @@ async def increment_attempt(state: AgentState) -> Dict[str, Any]:
                 "data_type": "uint16",
                 "function_code": 3
             }
-            for addr in suggested[:10]  # Use first 10 suggested
+            for addr in suggested[:10]
         ]
         
         logger.warning(
-            "🔄 REPLACING extracted_registers with suggested addresses for retry",
+            "Replacing extracted_registers with suggested addresses for retry",
             old_count=len(state.get("extracted_registers", [])),
             new_count=len(new_registers),
             new_addresses=[r["address"] for r in new_registers]
@@ -209,16 +202,13 @@ async def finalize_result(state: AgentState) -> Dict[str, Any]:
     
     store = get_experience_store()
     
-    # Calculate confidence score based on attempts and success
     if state["test_passed"]:
-        # Higher confidence for fewer attempts
         base_confidence = 0.9
         attempt_penalty = (state["current_attempt"] - 1) * 0.1
         confidence = max(0.5, base_confidence - attempt_penalty)
     else:
         confidence = 0.1
     
-    # Store experience in ChromaDB
     experience_id = None
     if state.get("test_error_message") or state["test_passed"]:
         try:

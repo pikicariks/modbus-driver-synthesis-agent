@@ -11,8 +11,6 @@ import httpx
 import json
 from datetime import datetime
 
-# PDF text with WRONG addresses (0x0001, 0x0002, etc.)
-# The simulator only accepts 30000+ addresses!
 DEMO_PDF_TEXT = """
 SOLAR INVERTER MODBUS PROTOCOL v1.2
 ===================================
@@ -51,16 +49,16 @@ NOTE: All registers are 16-bit values. Use function code 3.
 async def run_demo():
     """Run the fail-then-fix demo."""
     print("=" * 70)
-    print("🎬 DEMO: Fail → Learn → Fix → Success Cycle")
+    print("DEMO: Fail → Learn → Fix → Success Cycle")
     print("=" * 70)
     print()
-    print("📄 Input PDF has WRONG addresses: 0x0001, 0x0002, 0x0003...")
-    print("🔧 Simulator only accepts: 30000, 30001, 30002...")
+    print("Input PDF has WRONG addresses: 0x0001, 0x0002, 0x0003...")
+    print("Simulator only accepts: 30000, 30001, 30002...")
     print()
     print("Expected flow:")
-    print("  1️⃣  First attempt: LLM uses 0x0001 → FAIL (IllegalDataAddress)")
-    print("  2️⃣  Agent learns: Gets suggested addresses 30000+")
-    print("  3️⃣  Second attempt: LLM uses 30000 → SUCCESS ✅")
+    print("  1) First attempt: LLM uses 0x0001 → FAIL (IllegalDataAddress)")
+    print("  2) Agent learns: Gets suggested addresses 30000+")
+    print("  3) Second attempt: LLM uses 30000 → SUCCESS")
     print()
     print("-" * 70)
     print()
@@ -72,7 +70,7 @@ async def run_demo():
             "target_language": "python"
         }
         
-        print(f"🚀 Sending request to Python agent service...")
+        print("Sending request to Python agent service...")
         print(f"   Time: {datetime.now().strftime('%H:%M:%S')}")
         print()
         
@@ -85,25 +83,23 @@ async def run_demo():
             result = response.json()
             
             print("=" * 70)
-            print("📊 RESULTS")
+            print("RESULTS")
             print("=" * 70)
             print()
             
-            # Show success/fail
             if result.get("success"):
-                print("✅ FINAL STATUS: SUCCESS!")
+                print("FINAL STATUS: SUCCESS")
             else:
-                print("❌ FINAL STATUS: FAILED")
+                print("FINAL STATUS: FAILED")
             print()
             
-            # Show attempt logs
-            print("📋 ATTEMPT LOGS:")
+            print("ATTEMPT LOGS:")
             print("-" * 50)
             
             attempt_logs = result.get("attempt_logs", [])
             for log in attempt_logs:
                 agent = log.get("agent_name", "Unknown")
-                success = "✅" if log.get("success") else "❌"
+                success = "SUCCESS" if log.get("success") else "FAIL"
                 error = log.get("error_message", "")
                 duration = log.get("duration_ms", 0)
                 attempt = log.get("attempt_number", 1)
@@ -114,32 +110,29 @@ async def run_demo():
             
             print()
             
-            # Show total attempts
             total_attempts = result.get("total_internal_attempts", 1)
             confidence = result.get("confidence_score", 0)
             
-            print(f"📈 SUMMARY:")
+            print("SUMMARY:")
             print(f"   Total Internal Attempts: {total_attempts}")
             print(f"   Confidence Score: {confidence:.0%}")
             
-            # Check if it demonstrates fail-then-fix
             if total_attempts > 1 and result.get("success"):
                 print()
-                print("🎉 " + "=" * 66)
-                print("🎉 DEMO SUCCESS: Agent failed first, learned, and fixed the code!")
-                print("🎉 " + "=" * 66)
+                print("=" * 66)
+                print("DEMO SUCCESS: Agent failed first, learned, and fixed the code!")
+                print("=" * 66)
             elif total_attempts == 1 and result.get("success"):
                 print()
-                print("⚠️  Note: Agent succeeded on first try (LLM may have guessed correctly)")
+                print("Note: Agent succeeded on first try (LLM may have guessed correctly)")
             else:
                 print()
-                print("⚠️  Note: Agent did not succeed after retries")
+                print("Note: Agent did not succeed after retries")
             
-            # Show generated code snippet
             if result.get("generated_code"):
                 code = result["generated_code"]
                 print()
-                print("📝 GENERATED CODE (first 30 lines):")
+                print("GENERATED CODE (first 30 lines):")
                 print("-" * 50)
                 lines = code.split('\n')[:30]
                 for i, line in enumerate(lines, 1):

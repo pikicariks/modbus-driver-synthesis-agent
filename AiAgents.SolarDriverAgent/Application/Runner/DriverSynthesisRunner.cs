@@ -53,12 +53,10 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     /// </summary>
     public override async Task<bool> HasPendingWorkAsync(CancellationToken cancellationToken = default)
     {
-        // Prvo provjeri da li ima zadataka
         var hasTasks = await _taskRepository.HasEligibleTasksAsync(cancellationToken);
         if (!hasTasks)
             return false;
 
-        // Provjeri da li je Python servis dostupan
         var health = await _healthCheck.CheckHealthAsync(cancellationToken);
         if (!health.IsHealthy)
         {
@@ -79,9 +77,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     {
         var stopwatch = Stopwatch.StartNew();
 
-        // ═══════════════════════════════════════════════════════════════════════════
-        // PRE-CHECK: Da li je Python servis dostupan?
-        // ═══════════════════════════════════════════════════════════════════════════
         var health = await _healthCheck.CheckHealthAsync(cancellationToken);
         if (!health.IsHealthy)
         {
@@ -91,12 +86,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
             return TickResult<SynthesisTickData>.Idle();
         }
 
-        // ═══════════════════════════════════════════════════════════════════════════
-        // SENSE: Percepcija okruženja
-        // - Dohvata zadatak iz DB
-        // - Ekstraktuje tekst iz PDF-a (agent "čita" dokument)
-        // - Dohvata prethodna iskustva za kontekst
-        // ═══════════════════════════════════════════════════════════════════════════
         TaskPercept? percept;
         try
         {
@@ -104,11 +93,9 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("PDF"))
         {
-            // PDF ekstrakcija nije uspjela - ovo je SENSE greška
             _logger.LogError(ex, "SENSE failed: PDF extraction error");
             stopwatch.Stop();
             
-            // Moramo dohvatiti task za error reporting
             var failedTask = await _taskRepository.GetNextEligibleTaskAsync(cancellationToken);
             if (failedTask != null)
             {
@@ -142,15 +129,9 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
 
         try
         {
-            // Označi zadatak kao "u obradi"
             task.MarkAsProcessing();
             await _taskRepository.UpdateAsync(task, cancellationToken);
 
-            // ═══════════════════════════════════════════════════════════════════════════
-            // THINK: Odlučivanje - kreira akciju za sintezu
-            // - Koristi protokol tekst iz SENSE faze
-            // - Dodaje kontekst prethodnih grešaka
-            // ═══════════════════════════════════════════════════════════════════════════
             var action = await ThinkAsync(percept, cancellationToken);
             if (action is null)
             {
@@ -168,12 +149,8 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
                 "THINK complete for task {TaskId}. Action: synthesize {Language} driver",
                 task.Id, action.TargetLanguage);
 
-            // ═══════════════════════════════════════════════════════════════════════════
-            // ACT: Izvršavanje - poziva Python multi-agent sistem
-            // ═══════════════════════════════════════════════════════════════════════════
             var result = await ActAsync(action, cancellationToken);
 
-            // Provjeri da li je greška zbog nedostupnog servisa
             if (!result.Success && IsInfrastructureError(result.ErrorMessage))
             {
                 _logger.LogWarning(
@@ -187,12 +164,8 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
                 return TickResult<SynthesisTickData>.Idle();
             }
 
-            // ═══════════════════════════════════════════════════════════════════════════
-            // LEARN: Učenje - snima iskustvo u bazu
-            // ═══════════════════════════════════════════════════════════════════════════
             await LearnAsync(percept, action, result, cancellationToken);
 
-            // Ažuriraj status zadatka
             stopwatch.Stop();
 
             if (result.Success)
@@ -244,7 +217,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
         }
         catch (HttpRequestException ex)
         {
-            // Infrastrukturna greška - ne troši retry
             stopwatch.Stop();
             _logger.LogWarning(
                 "HTTP error during ACT for task {TaskId}: {Error}. Reverting to Queued.",
@@ -266,7 +238,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
             stopwatch.Stop();
             _logger.LogError(ex, "Unexpected error processing task {TaskId}", task.Id);
             
-            // Dodaj log za exception (jer LearnAsync nije pozvana)
             var exceptionLog = SimulationLog.CreateFailure(
                 task.Id, 
                 task.AttemptCount, 
@@ -292,13 +263,10 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     /// </summary>
     protected override async Task<TaskPercept?> SenseAsync(CancellationToken cancellationToken)
     {
-        // 1. Dohvati sljedeći zadatak
         var task = await _taskRepository.GetNextEligibleTaskAsync(cancellationToken);
         if (task is null)
             return null;
 
-        // 2. Ekstraktuj tekst iz PDF-a ako nije već ekstraktovan
-        //    Ovo je dio SENSE - agent "čita" dokument
         string protocolText;
         if (string.IsNullOrEmpty(task.ExtractedSpecification))
         {
@@ -306,7 +274,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
 
             protocolText = await _pdfExtractor.ExtractTextAsync(task.PdfDocument, cancellationToken);
 
-            // Sačuvaj ekstraktovani tekst za buduće pokušaje
             task.SetExtractedSpecification(protocolText);
             await _taskRepository.UpdateAsync(task, cancellationToken);
 
@@ -322,7 +289,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
                 protocolText.Length, task.Id);
         }
 
-        // 3. Dohvati prethodna iskustva za kontekst (LEARN feedback)
         var previousErrors = new List<string>();
         string? experienceContext = null;
 
@@ -339,7 +305,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
                 taskLogs.Count, task.Id);
         }
 
-        // 4. RAG-like kontekst iz drugih zadataka (global failures)
         var globalFailures = await _logRepository.GetRecentFailuresGlobalAsync(3, cancellationToken);
         if (globalFailures.Count > 0)
         {
@@ -352,7 +317,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
                 globalFailures.Count);
         }
 
-        // 4. Kreiraj percept sa svim informacijama
         return new TaskPercept
         {
             Task = task,
@@ -368,7 +332,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     /// </summary>
     protected override Task<SynthesisAction?> ThinkAsync(TaskPercept percept, CancellationToken cancellationToken)
     {
-        // Validiraj da imamo protokol tekst iz SENSE faze
         if (!percept.HasValidProtocolText)
         {
             _logger.LogWarning(
@@ -381,7 +344,7 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
         var action = new SynthesisAction
         {
             TaskId = percept.Task.Id,
-            ProtocolText = percept.ProtocolText,  // Koristi tekst iz SENSE
+            ProtocolText = percept.ProtocolText,
             DeviceName = percept.Task.DeviceName,
             ExperienceContext = percept.ExperienceContext,
             TargetLanguage = "python",
@@ -423,7 +386,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     {
         var task = percept.Task;
 
-        // Serijalizuj interne pokušaje u JSON za skladištenje
         string? internalAttemptsJson = null;
         if (result.InternalAttempts.Count > 0)
         {
@@ -482,7 +444,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
 
         await _logRepository.AddAsync(log, cancellationToken);
 
-        // Log internal agent attempts za debugging
         foreach (var attempt in result.InternalAttempts)
         {
             _logger.LogDebug(
@@ -525,7 +486,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     {
         var task = percept.Task;
 
-        // Error message može biti na root nivou ili u TestResult
         var errorMessage = result.ErrorMessage ?? result.TestResult?.ErrorMessage;
 
         return new SynthesisTickData
@@ -561,7 +521,6 @@ public class DriverSynthesisRunner : SoftwareAgent<TaskPercept, SynthesisAction,
     /// </summary>
     private static SynthesisTickData CreatePartialTickData(ProtocolTask task, SynthesisResult? result)
     {
-        // Error message može biti na root nivou ili u TestResult
         var errorMessage = result?.ErrorMessage ?? result?.TestResult?.ErrorMessage;
         
         return new SynthesisTickData

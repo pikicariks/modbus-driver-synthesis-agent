@@ -20,13 +20,11 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // ProtocolTask konfiguracija
         modelBuilder.Entity<ProtocolTask>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.DeviceName).HasMaxLength(256).IsRequired();
             entity.Property(e => e.PdfDocument).IsRequired();
-            // SQLite koristi TEXT za dugačke stringove (bez max specifikacije)
             entity.Property(e => e.ExtractedSpecification);
             entity.Property(e => e.Status).IsRequired();
 
@@ -44,7 +42,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.CreatedAt);
         });
 
-        // DriverCode konfiguracija
         modelBuilder.Entity<DriverCode>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -54,7 +51,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.ProtocolTaskId);
         });
 
-        // SimulationLog konfiguracija
         modelBuilder.Entity<SimulationLog>(entity =>
         {
             entity.HasKey(e => e.Id);

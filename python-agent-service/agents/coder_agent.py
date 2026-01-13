@@ -99,16 +99,12 @@ def fix_common_code_issues(code: str) -> str:
     """
     import re
     
-    # Replace deprecated pymodbus imports
     code = code.replace("from pymodbus.client.async import AsyncModbusTcpClient", 
                         "from pymodbus.client import AsyncModbusTcpClient")
     
-    # Ensure proper connect/close
     if "await client.connect()" not in code:
         code = code.replace("client = AsyncModbusTcpClient(", "client = AsyncModbusTcpClient(")
     
-    # Fix invalid tuple unpack with defaults inside for-loop (common LLM mistake)
-    # Pattern: for address, (name, scale, is_signed=False, is_32bit=False) in register_map.items():
     pattern = r"for\s+([A-Za-z_][A-Za-z0-9_]*)\s*,\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*=False\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*=False\s*\)\s*in\s*([A-Za-z_][A-Za-z0-9_]*)\.items\(\):"
     match = re.search(pattern, code)
     if match:
@@ -139,10 +135,8 @@ async def generate_code(state: AgentState) -> Dict[str, Any]:
     
     settings = get_settings()
     
-    # Increase temperature on retry to get different output
     base_temp = settings.code_generation_temperature
     if state["current_attempt"] > 1:
-        # Higher temperature = more creative/different output
         temperature = min(0.7, base_temp + 0.3)
         logger.info("Using higher temperature for retry", 
                    attempt=state["current_attempt"], temperature=temperature)
@@ -155,51 +149,45 @@ async def generate_code(state: AgentState) -> Dict[str, Any]:
         api_key=settings.openai_api_key
     )
     
-    # Build error context if this is a retry
     error_context = ""
     if state["current_attempt"] > 1 and state.get("test_error_message"):
         error_msg = state['test_error_message']
         
-        # Get the invalid address that was tried
         invalid_addr = state.get("invalid_address")
         
-        # Get suggested valid addresses from the Tester (these are from the simulator)
         suggested = state.get("suggested_addresses", [])
         
-        # Check for IllegalDataAddress error - this is CRITICAL
         if "ILLEGAL" in error_msg.upper() or "does not exist" in error_msg:
-            # Use suggested addresses from tester (simulator's valid addresses)
             if suggested:
                 valid_addrs_str = ", ".join([str(a) for a in suggested[:10]])
             else:
-                # Fallback to extracted_registers
                 valid_addrs = [r.get('address', 30000) for r in state.get("extracted_registers", [])]
                 valid_addrs_str = ", ".join([str(a) for a in valid_addrs[:10]]) if valid_addrs else "30000, 30001, 30002, 30003, 30004"
             
             error_context = f"""
-🚨🚨🚨 CRITICAL FIX REQUIRED - YOUR PREVIOUS CODE FAILED! 🚨🚨🚨
+CRITICAL FIX REQUIRED - YOUR PREVIOUS CODE FAILED!
 
-❌ PROBLEM: Your code tried to read register address {invalid_addr or 'INVALID'} which DOES NOT EXIST!
+PROBLEM: Your code tried to read register address {invalid_addr or 'INVALID'} which DOES NOT EXIST.
 
-The Modbus simulator REJECTED your request with: IllegalDataAddress (0x02)
+The Modbus simulator rejected your request with: IllegalDataAddress (0x02).
 
-✅ SOLUTION - USE THESE EXACT ADDRESSES:
+SOLUTION - USE THESE ADDRESSES:
 {valid_addrs_str}
 
-⚠️ YOUR PREVIOUS MISTAKE:
+YOUR PREVIOUS MISTAKE:
 You used addresses like 0x0000, 0x0001, 0x0002, 0x0003, etc.
-These are WRONG! The solar inverter uses addresses starting at 30000!
+These are wrong. The solar inverter uses addresses starting at 30000.
 
-📝 EXAMPLE OF CORRECT CODE:
+EXAMPLE OF CORRECT CODE:
 ```python
-# WRONG (what you did):
+# WRONG (previous):
 response = await client.read_holding_registers(0x0001, count=1)
 
-# CORRECT (what you must do now):
+# CORRECT (use now):
 response = await client.read_holding_registers(30000, count=1)
 ```
 
-🔴 DO NOT REPEAT THE SAME MISTAKE! Use addresses: {valid_addrs_str}
+DO NOT REPEAT THE SAME MISTAKE. Use addresses: {valid_addrs_str}
 """
             logger.warning(
                 "RETRY with corrected addresses",
@@ -209,17 +197,16 @@ response = await client.read_holding_registers(30000, count=1)
             )
         else:
             error_context = f"""
-⚠️ PREVIOUS CODE FAILED - FIX REQUIRED:
+PREVIOUS CODE FAILED - FIX REQUIRED:
 
 Error: {error_msg}
 
 Problematic bytes: {state.get('test_error_bytes', 'N/A')}
 Byte position: {state.get('test_byte_position', 'N/A')}
 
-Please carefully fix this specific issue in the new code.
+Please fix this specific issue in the new code.
 """
     
-    # Build experience context from ChromaDB
     experience_context = ""
     if state.get("previous_experience_context"):
         experience_context = f"""
@@ -229,14 +216,12 @@ Please carefully fix this specific issue in the new code.
 Use these past experiences to avoid similar mistakes.
 """
     
-    # Format registers for prompt
     registers_str = "\n".join([
         f"- {r.get('address_hex', '0x0000')}: {r.get('name', 'Unknown')} ({r.get('data_type', 'uint16')})"
         for r in state.get("extracted_registers", [])
     ]) or "No specific registers extracted - use specification text."
     
     try:
-        # Select prompt based on target language
         if state["target_language"].lower() == "csharp":
             prompt = CODER_PROMPT_CSHARP
         else:
@@ -253,17 +238,13 @@ Use these past experiences to avoid similar mistakes.
         
         raw_response = response.content
         
-        # Log raw response for debugging
         logger.debug("Raw LLM response (first 500 chars)", 
                     raw_preview=raw_response[:500] if raw_response else "EMPTY")
         
-        # Extract code from markdown if present
         generated_code = extract_code_block(raw_response, state["target_language"])
         
-        # Fix common LLM-generated code issues
         generated_code = fix_common_code_issues(generated_code)
         
-        # Log extracted code for debugging
         logger.debug("Extracted code (first 300 chars)",
                     code_preview=generated_code[:300] if generated_code else "EMPTY")
         
@@ -314,21 +295,18 @@ def fix_common_code_issues(code: str) -> str:
     """Fix common LLM-generated code issues."""
     import re
     
-    # Fix old pymodbus 2.x imports (async is a reserved keyword in Python 3.7+)
     code = re.sub(
         r'from\s+pymodbus\.client\.async\s+import',
         'from pymodbus.client import',
         code
     )
     
-    # Fix other old import patterns
     code = re.sub(
         r'from\s+pymodbus\.client\.asynchronous\.tcp\s+import\s+AsyncModbusTCPClient',
         'from pymodbus.client import AsyncModbusTcpClient',
         code
     )
     
-    # Fix case sensitivity issues
     code = re.sub(
         r'AsyncModbusTCPClient',
         'AsyncModbusTcpClient',
@@ -342,38 +320,30 @@ def extract_code_block(text: str, language: str) -> str:
     """Extract code block from markdown-formatted response."""
     import re
     
-    # Remove any leading/trailing whitespace
     text = text.strip()
     
-    # Pattern 1: Code block with language marker (```python ... ```)
     lang_marker = "python" if language.lower() == "python" else "csharp|cs|c#"
     pattern1 = rf"```(?:{lang_marker})\s*\n(.*?)```"
     matches = re.findall(pattern1, text, re.DOTALL | re.IGNORECASE)
     if matches:
         return matches[0].strip()
     
-    # Pattern 2: Generic code block (``` ... ```)
     pattern2 = r"```\s*\n(.*?)```"
     matches = re.findall(pattern2, text, re.DOTALL)
     if matches:
         return matches[0].strip()
     
-    # Pattern 3: Code block without newline after backticks
     pattern3 = r"```(?:python|py)?(.*?)```"
     matches = re.findall(pattern3, text, re.DOTALL | re.IGNORECASE)
     if matches:
         return matches[0].strip()
     
-    # Pattern 4: If text starts with ``` remove it
     if text.startswith("```"):
         lines = text.split("\n")
-        # Remove first line if it's just backticks with optional language
         if lines[0].strip().startswith("```"):
             lines = lines[1:]
-        # Remove last line if it's just backticks
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         return "\n".join(lines).strip()
     
-    # No code block found, return the text as-is
     return text

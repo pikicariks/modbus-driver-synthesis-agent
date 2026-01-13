@@ -46,21 +46,17 @@ class ExperienceStore:
         Compute a signature for a protocol based on key characteristics.
         Used for finding similar protocols.
         """
-        # Extract key features for signature
         features = []
         
-        # Look for register patterns
         import re
         register_pattern = r'(?:register|address|addr)[:\s]*(?:0x)?([0-9a-fA-F]+)'
         registers = re.findall(register_pattern, protocol_text.lower())
         features.extend(sorted(set(registers))[:10])  # Top 10 unique registers
         
-        # Look for function codes
         func_pattern = r'(?:function|func)[:\s]*(?:code)?[:\s]*(\d+)'
         func_codes = re.findall(func_pattern, protocol_text.lower())
         features.extend(sorted(set(func_codes)))
         
-        # Look for data types
         type_keywords = ['int16', 'int32', 'uint16', 'uint32', 'float', 'string']
         for kw in type_keywords:
             if kw in protocol_text.lower():
@@ -85,14 +81,12 @@ class ExperienceStore:
         Store an experience in ChromaDB.
         Returns the experience ID.
         """
-        # Handle None error_message
         error_msg = error_message or "Success"
         solution = solution_applied or "N/A"
         
         experience_id = f"exp_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{hashlib.md5(error_msg.encode()).hexdigest()[:8]}"
         protocol_signature = self.compute_protocol_signature(protocol_text)
         
-        # Create document text for embedding
         document = f"""
         Problem Type: {problem_type}
         Error: {error_msg}
@@ -140,12 +134,10 @@ class ExperienceStore:
         Find similar experiences based on protocol text.
         Used in SENSE phase to retrieve relevant past experiences.
         """
-        # Query text for embedding
         query_text = f"Protocol: {protocol_text[:1000]}"
         if problem_type:
             query_text += f" Problem: {problem_type}"
         
-        # Build where filter
         where_filter = None
         if problem_type:
             where_filter = {"problem_type": problem_type}
@@ -221,7 +213,6 @@ class ExperienceStore:
         return "\n".join(context_parts)
 
 
-# Singleton instance
 _store: Optional[ExperienceStore] = None
 
 

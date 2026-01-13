@@ -5,19 +5,16 @@ import json
 import sys
 import io
 
-# Fix Windows console encoding
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 def view_all_experiences():
     """View all experiences stored in ChromaDB."""
     
-    # Connect to ChromaDB
     client = chromadb.PersistentClient(
         path="./chroma_db",
         settings=ChromaSettings(anonymized_telemetry=False)
     )
     
-    # Get the collection
     try:
         collection = client.get_collection("protocol_experiences")
     except Exception as e:
@@ -25,7 +22,6 @@ def view_all_experiences():
         print("Available collections:", [c.name for c in client.list_collections()])
         return
     
-    # Get count
     count = collection.count()
     print(f"\n{'='*60}")
     print(f"ChromaDB Experience Store")
@@ -37,7 +33,6 @@ def view_all_experiences():
         print("No experiences stored yet.")
         return
     
-    # Get all experiences
     results = collection.get(
         include=["documents", "metadatas"]
     )
@@ -54,7 +49,6 @@ def view_all_experiences():
         print(f"| Experience #{i+1}: {exp_id}")
         print(f"+{'-'*58}+")
         
-        # Parse metadata
         print(f"| Created: {metadata.get('created_at', 'Unknown')}")
         print(f"| Device: {metadata.get('device_type', 'Unknown')}")
         print(f"| Problem Type: {metadata.get('problem_type', 'Unknown')}")
@@ -78,7 +72,6 @@ def view_all_experiences():
         print(f"+{'-'*58}+")
         print()
     
-    # Summary
     print(f"\n{'='*60}")
     print("Summary")
     print(f"{'='*60}")
@@ -89,7 +82,6 @@ def view_all_experiences():
     print(f"Successful experiences: {successes}")
     print(f"Failed experiences: {failures}")
     
-    # Problem types
     problem_types = {}
     for m in results['metadatas']:
         pt = m.get('problem_type', 'unknown')
@@ -99,7 +91,6 @@ def view_all_experiences():
     for pt, cnt in problem_types.items():
         print(f"   - {pt}: {cnt}")
     
-    # Device types
     device_types = {}
     for m in results['metadatas']:
         dt = m.get('device_type', 'unknown') or 'unknown'

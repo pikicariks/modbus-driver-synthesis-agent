@@ -42,14 +42,13 @@ public class TasksController : ControllerBase
     /// Validira PDF prije upisivanja u bazu.
     /// </summary>
     [HttpPost("upload")]
-    [RequestSizeLimit(50 * 1024 * 1024)] // 50MB limit
+    [RequestSizeLimit(50 * 1024 * 1024)]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<UploadTaskResponse>> UploadPdf(
         [FromForm] string deviceName,
         IFormFile pdfFile,
         CancellationToken cancellationToken)
     {
-        // 1. Osnovna validacija
         if (pdfFile == null || pdfFile.Length == 0)
         {
             return BadRequest(new { error = "PDF file is required" });
@@ -61,12 +60,10 @@ public class TasksController : ControllerBase
             return BadRequest(new { error = "File must be a PDF document" });
         }
 
-        // 2. Učitaj PDF u memoriju
         using var memoryStream = new MemoryStream();
         await pdfFile.CopyToAsync(memoryStream, cancellationToken);
         var pdfBytes = memoryStream.ToArray();
 
-        // 3. Validiraj PDF strukturu (magic bytes, stranice, tekst)
         var validationResult = _pdfValidator.Validate(pdfBytes);
 
         if (!validationResult.IsValid)
@@ -83,7 +80,6 @@ public class TasksController : ControllerBase
             });
         }
 
-        // 4. Upozori ako PDF nema teksta (ali dozvoli upload)
         if (!validationResult.HasExtractableText)
         {
             _logger.LogWarning(
@@ -91,7 +87,6 @@ public class TasksController : ControllerBase
                 pdfFile.FileName);
         }
 
-        // 5. Kreiraj zadatak
         var task = ProtocolTask.Create(deviceName ?? "Unknown Device", pdfBytes);
         await _taskRepository.AddAsync(task, cancellationToken);
 
@@ -102,7 +97,6 @@ public class TasksController : ControllerBase
             validationResult.FileSize,
             validationResult.HasExtractableText);
 
-        // Emituj SignalR event za real-time dashboard
         await _hubContext.Clients.All.TaskCreated(new TaskCreatedNotification
         {
             TaskId = task.Id,
@@ -145,7 +139,6 @@ public class TasksController : ControllerBase
             return NotFound(new { error = $"Task {taskId} not found" });
         }
 
-        // Dohvati posljednju grešku ako postoji
         string? lastError = null;
         var logs = await _logRepository.GetRecentFailuresAsync(taskId, 1, cancellationToken);
         if (logs.Count > 0)
@@ -196,7 +189,6 @@ public class TasksController : ControllerBase
         [FromQuery] string? status = null,
         CancellationToken cancellationToken = default)
     {
-        // Parse status filter
         ProtocolTaskStatus? statusFilter = null;
         if (!string.IsNullOrEmpty(status) &&
             Enum.TryParse<ProtocolTaskStatus>(status, ignoreCase: true, out var parsedStatus))
@@ -206,7 +198,6 @@ public class TasksController : ControllerBase
 
         var result = await _taskRepository.GetAllAsync(page, pageSize, statusFilter, cancellationToken);
 
-        // Dohvati posljednje greške za failed taskove
         var taskResponses = new List<TaskStatusResponse>();
         foreach (var task in result.Items)
         {

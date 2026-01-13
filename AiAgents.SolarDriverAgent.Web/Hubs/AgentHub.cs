@@ -46,33 +46,27 @@ public record TickNotification
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     public string EventType { get; init; } = "TickCompleted";
     
-    // Task info
     public Guid TaskId { get; init; }
     public string DeviceName { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     
-    // Result info
     public bool Success { get; init; }
     public string? Message { get; init; }
     public string? ErrorMessage { get; init; }
     
-    // Metrics
     public int InternalAttempts { get; init; }
     public double ConfidenceScore { get; init; }
     public int TotalAttempts { get; init; }
     public int MaxAttempts { get; init; }
     public long DurationMs { get; init; }
     
-    // Extracted data
     public int RegisterCount { get; init; }
     public IReadOnlyList<string> TestedRegisters { get; init; } = Array.Empty<string>();
     
-    // Learning
     public string? ExperienceId { get; init; }
     public string? ProblematicBytes { get; init; }
     public int? BytePosition { get; init; }
     
-    // Agent logs
     public IReadOnlyList<AgentLogEntry> AgentLogs { get; init; } = Array.Empty<AgentLogEntry>();
 }
 
@@ -92,7 +86,7 @@ public record AgentLogEntry
 public record AgentStatusNotification
 {
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
-    public string Status { get; init; } = "Idle"; // Idle, Working, Error
+    public string Status { get; init; } = "Idle";
     public int PendingTasks { get; init; }
     public bool PythonServiceHealthy { get; init; }
 }
